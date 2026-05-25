@@ -42,6 +42,92 @@
 | 水汽 | Raman LiDAR / DIAL | 水汽混合比廓线 | 高 | 对气溶胶反演也有帮助 |
 | VOCs | DIAL/FTIR/TDLAS/荧光，或点式传感器 | 单组分或类别估计 | 很高 | 不建议第一阶段做 |
 
+### 1.1 工业园区/工厂排放监测经典场景
+
+这是最值得落地的业务场景之一，因为它既需要“看见污染羽流”，也需要“找到源头并联动核查”。
+
+先把概念说清楚：
+
+- `PM2.5/PM10` 是大气中的颗粒物，不只是“灰尘”。
+- 它们可能来自道路扬尘、施工扬尘、燃烧烟尘、工业粉尘、黑碳、硫酸盐、硝酸盐、铵盐、液滴和雾滴。
+- 对颗粒物 LiDAR 来说，直接测到的是后向散射、消光、退偏振比和污染层结构，不是烟囱口标准工况下的法定质量浓度。
+
+因此，在工业园区或工厂排放监管里，LiDAR 最适合承担的是：
+
+- 异常排放发现。
+- 污染羽流定位。
+- 扩散方向判断。
+- 重点时段预警。
+- 企业周边无组织排放巡查。
+
+而不应该把它单独当成“烟囱是否超标”的唯一判定工具。
+
+### 1.2 一个典型监管系统怎么分工
+
+推荐把系统理解成“立体监测网络”，而不是一台仪器包打天下：
+
+| 设备/系统 | 主要作用 | 擅长回答的问题 | 不擅长回答的问题 |
+|---|---|---|---|
+| 扫描式颗粒物 LiDAR | 看 2D/3D 污染羽流、边界层、输送方向 | 污染从哪来、往哪走、哪一片区域异常 | 单独给出法定意义上的烟囱颗粒物超标值 |
+| DIAL / VOCs LiDAR | 看特定气体羽流或路径积分浓度 | 园区哪里出现 VOCs/臭氧前体物异常 | 单独完成复杂源清单和执法取证 |
+| `CEMS`（烟囱在线） | 连续监测排气筒浓度和排放状态 | 某固定排口是否持续稳定达标 | 厂区外羽流扩散和空间分布 |
+| 厂界站 / 微站 | 看园区边界和敏感点浓度变化 | 哪个方向、哪个时段污染抬升 | 三维扩散路径和高空层结构 |
+| 走航监测车 | 看路网/园区内部热点和泄漏点 | 哪条路、哪个厂门、哪片装置区更异常 | 长时间连续盯住高空结构 |
+| 气象站 / 风廓线 / 多普勒 LiDAR | 提供风场、混合层和输送条件 | 污染是本地生成还是外来输送 | 单独解释污染成分 |
+| 手工采样/便携式仪器 | 执法核查、比对和组分分析 | 是否满足标准、是什么成分 | 大范围连续扫描 |
+
+一句话总结：
+
+- `LiDAR` 负责“看空间分布和传输过程”。
+- `CEMS` 和手工监测负责“看固定排口是否合规”。
+- 走航、厂界站和气象负责“补齐地面热点和扩散条件”。
+
+### 1.3 在工厂监管里，LiDAR 最适合怎么用
+
+最经典的流程是：
+
+1. LiDAR 在园区外或制高点做 `PPI/RHI` 扫描，发现某个时段某个方向出现异常羽流。
+2. 系统结合风向风速、企业位置和排口位置，缩小怀疑源范围。
+3. 调度走航车或便携仪器进入目标区域，确认是道路扬尘、堆场扬尘、装置泄漏、无组织排放还是有组织排放异常。
+4. 对固定排口，再调取 `CEMS`、工况数据和治理设施运行记录做交叉核查。
+5. 对园区层面，则输出预警、事件回放、扩散轨迹和高风险时段统计。
+
+这套流程非常适合：
+
+- 化工园区 `VOCs` 预警。
+- 钢铁、水泥、焦化、电厂周边颗粒物和烟羽巡查。
+- 港口、料场、堆场和施工场地扬尘监管。
+- 城市主干道、物流园、工业园混合污染源排查。
+
+### 1.4 能不能直接用 LiDAR 判断“工厂是否超标”
+
+结论要分两层：
+
+- **能用于发现疑似超标或异常排放。**
+- **通常不能只靠一台大气 LiDAR 直接完成法定意义上的超标判定。**
+
+原因：
+
+- 颗粒物 LiDAR 测到的是光学量，不是烟道标准状态下的法定浓度。
+- `PM2.5/PM10` 质量浓度通常需要本地标定，还受湿度、成分、粒径分布影响。
+- 对固定污染源合规监管，官方技术路线仍以烟道在线监测、手工监测和比对监测为主。
+
+所以更合理的产品定位是：
+
+```text
+工业园区异常排放发现与溯源系统
+而不是
+单台 LiDAR 直接替代固定排口合规监测
+```
+
+### 1.5 为什么这个场景值得做
+
+因为它兼具技术价值和业务价值：
+
+- 对用户来说，肉眼看不见的污染羽流会第一次变成“能看、能回放、能定位”的图层。
+- 对环保部门和园区管理者来说，它能把巡查从“人找问题”变成“系统先预警，再人工核实”。
+- 对工厂自己来说，也可以反过来用它做厂界风险预警、治理设施优化和投诉响应。
+
 ---
 
 ## 2. 基本物理原理
@@ -50,30 +136,30 @@
 
 激光发出短脉冲，空气分子和颗粒物把一小部分光散射回来。接收望远镜按时间采样，时间对应距离：
 
-```text
-R = c * t / 2
-```
+$$
+R = \frac{ct}{2}
+$$
 
 典型 LiDAR 方程可写成：
 
-```text
-P(R) = C * E * O(R) / R^2 * beta(R) * exp[-2 * integral(alpha(r), 0..R)]
-```
+$$
+P(R) = C E \frac{O(R)}{R^2} \beta(R) \exp\left[-2\int_0^R \alpha(r)\,dr\right]
+$$
 
 含义：
 
-- `P(R)`：距离 `R` 处返回信号。
-- `E`：单脉冲能量。
-- `O(R)`：发射光束与接收视场的重叠函数。
-- `beta(R)`：后向散射系数，包含分子 Rayleigh 和颗粒物 Mie 散射。
-- `alpha(R)`：消光系数，包含散射和吸收导致的衰减。
-- `R^-2`：距离平方衰减。
+- $P(R)$：距离 $R$ 处返回信号。
+- $E$：单脉冲能量。
+- $O(R)$：发射光束与接收视场的重叠函数。
+- $\beta(R)$：后向散射系数，包含分子 Rayleigh 和颗粒物 Mie 散射。
+- $\alpha(R)$：消光系数，包含散射和吸收导致的衰减。
+- $R^{-2}$：距离平方衰减。
 
 问题是 `alpha` 和 `beta` 都未知，所以单波长弹性 LiDAR 必须引入假设，例如 lidar ratio：
 
-```text
-S = alpha_aerosol / beta_aerosol
-```
+$$
+S = \frac{\alpha_{\mathrm{aerosol}}}{\beta_{\mathrm{aerosol}}}
+$$
 
 这就是 Klett/Fernald 反演方法的核心限制。
 
@@ -94,9 +180,9 @@ HSRL 使用超窄谱滤波，把分子 Rayleigh 散射和颗粒物 Mie 散射分
 
 发射线偏振光，接收平行/垂直偏振分量，得到退偏振比：
 
-```text
-delta = P_cross / P_parallel
-```
+$$
+\delta = \frac{P_{\mathrm{cross}}}{P_{\mathrm{parallel}}}
+$$
 
 用途：
 
@@ -108,14 +194,14 @@ delta = P_cross / P_parallel
 
 DIAL 用两束相近波长：
 
-- `lambda_on`：目标气体吸收强。
-- `lambda_off`：目标气体吸收弱。
+- $\lambda_{\mathrm{on}}$：目标气体吸收强。
+- $\lambda_{\mathrm{off}}$：目标气体吸收弱。
 
 通过两条回波曲线的差异反演目标气体浓度：
 
-```text
-N(R) ≈ 1 / [2 * (sigma_on - sigma_off)] * d/dR ln[P_off(R) / P_on(R)]
-```
+$$
+N(R) \approx \frac{1}{2\left(\sigma_{\mathrm{on}} - \sigma_{\mathrm{off}}\right)} \frac{d}{dR} \ln\left(\frac{P_{\mathrm{off}}(R)}{P_{\mathrm{on}}(R)}\right)
+$$
 
 实际还要修正：
 
@@ -270,9 +356,9 @@ N(R) ≈ 1 / [2 * (sigma_on - sigma_off)] * d/dR ln[P_off(R) / P_on(R)]
 7. 发射能量归一化。
 8. 距离平方校正：
 
-```text
-RCS(R) = P(R) * R^2
-```
+$$
+\mathrm{RCS}(R) = P(R) R^2
+$$
 
 9. overlap function 校正，近距离尤其重要。
 10. 时间/距离平滑或重采样。
@@ -312,9 +398,9 @@ RCS(R) = P(R) * R^2
 
 LiDAR 光学量转 PM 质量浓度，建议做成机器学习/统计标定问题：
 
-```text
-PM2.5 = f(extinction_532, backscatter_532, depol, RH, T, wind, aerosol_type, hour, season)
-```
+$$
+\mathrm{PM}_{2.5} = f\left(\mathrm{extinction}_{532}, \mathrm{backscatter}_{532}, \mathrm{depol}, RH, T, \mathrm{wind}, \mathrm{aerosol\_type}, \mathrm{hour}, \mathrm{season}\right)
+$$
 
 注意：
 
@@ -336,7 +422,7 @@ PM2.5 = f(extinction_532, backscatter_532, depol, RH, T, wind, aerosol_type, hou
 基础处理：
 
 1. on/off 通道分别预处理。
-2. 计算 `ln(P_off / P_on)`。
+2. 计算 $\ln\left(P_{\mathrm{off}} / P_{\mathrm{on}}\right)$。
 3. 对距离求导，通常需要正则化或平滑。
 4. 修正 Rayleigh、气溶胶、其他气体吸收。
 5. 输出浓度廓线和不确定度。
@@ -395,11 +481,13 @@ PM2.5 = f(extinction_532, backscatter_532, depol, RH, T, wind, aerosol_type, hou
 - 每条激光射线按距离分箱，形成 `(azimuth, elevation, range)`。
 - 转换到本地 ENU 坐标：
 
-```text
-x = R * cos(elevation) * sin(azimuth)
-y = R * cos(elevation) * cos(azimuth)
-z = R * sin(elevation)
-```
+$$
+\begin{aligned}
+x &= R \cos(\mathrm{elevation}) \sin(\mathrm{azimuth}) \\
+y &= R \cos(\mathrm{elevation}) \cos(\mathrm{azimuth}) \\
+z &= R \sin(\mathrm{elevation})
+\end{aligned}
+$$
 
 显示方式：
 
@@ -443,7 +531,7 @@ https://actris-cloudnet.github.io/cloudnetpy/quickstart.html
 这个界面给你的启发：
 
 - 第一屏不一定是 3D，最常用的是 **时间-高度 curtain plot**。
-- 颜色条必须清楚标单位，例如 `sr^-1 m^-1`、`dBZ`、`m s^-1`。
+- 颜色条必须清楚标单位，例如 $sr^{-1}\,m^{-1}$、$dBZ$、$m\,s^{-1}$。
 - 空白/mask 区域很重要，不能为了“好看”把无效数据强行插值。
 - 同一时间轴上叠加多个产品，比单独看一张图更有诊断价值。
 
@@ -613,7 +701,7 @@ CL61 后向散射图：
 
 ## 10. 推荐论文与资料
 
-### 9.1 入门与原理
+### 10.1 入门与原理
 
 - NOAA 对大气 LiDAR 的简明介绍：  
   https://csl.noaa.gov/groups/csl3/instruments/dial/lidar.html
@@ -622,7 +710,7 @@ CL61 后向散射图：
 - JPL Rayleigh/Raman aerosol retrieval：  
   https://lidar.jpl.nasa.gov/ndacc/instruments/Aerosols.php
 
-### 9.2 经典反演算法
+### 10.2 经典反演算法
 
 - Klett, 1981, *Stable analytical inversion solution for processing lidar returns*：  
   https://pubmed.ncbi.nlm.nih.gov/20309093/
@@ -635,7 +723,7 @@ CL61 后向散射图：
 - Aerosol extinction/backscatter review, 2021：  
   https://www.sciencedirect.com/science/article/pii/S0022407320310207
 
-### 9.3 DIAL 与气体污染物
+### 10.3 DIAL 与气体污染物
 
 - JPL DIAL ozone technique：  
   https://lidar.jpl.nasa.gov/ndacc/instruments/Ozone.php
@@ -648,7 +736,7 @@ CL61 后向散射图：
 - NO2 DIAL 示例，ScienceDirect 2024：  
   https://www.sciencedirect.com/science/article/pii/S0143816624003233
 
-### 9.4 开源处理链与数据
+### 10.4 开源处理链与数据
 
 - ACTRIS/EARLINET Single Calculus Chain 论文：  
   https://amt.copernicus.org/articles/8/4891/2015/
@@ -671,7 +759,7 @@ CL61 后向散射图：
 - GARRLiC algorithm paper：  
   https://amt.copernicus.org/articles/6/2065/2013/amt-6-2065-2013.html
 
-### 9.5 光谱、气溶胶和地面空气质量数据
+### 10.5 光谱、气溶胶和地面空气质量数据
 
 - HITRAN 数据库：  
   https://hitran.org/
@@ -692,7 +780,7 @@ CL61 后向散射图：
 - EPA AQS API：  
   https://aqs.epa.gov/aqsweb/documents/data_api.html
 
-### 9.6 数据标准与安全
+### 10.6 数据标准与安全
 
 - CF NetCDF metadata conventions：  
   https://cfconventions.org/
@@ -702,6 +790,19 @@ CL61 后向散射图：
   https://www.fda.gov/radiation-emitting-products/home-business-and-entertainment-products/laser-products-and-instruments
 - FAA Outdoor Laser Operations AC 70-1B：  
   https://www.faa.gov/regulations_policies/advisory_circulars/index.cfm/go/document.information/documentID/1040741
+
+### 10.7 工业园区/固定污染源监管参考
+
+- EPA particulate matter basics：  
+  https://www.epa.gov/pm-pollution/particulate-matter-pm-basics
+- HJ 75-2017, 固定污染源烟气（SO2、NOx、颗粒物）排放连续监测技术规范英文页：  
+  https://english.mee.gov.cn/Resources/standards/others1/Others/201803/t20180314_432446.shtml
+- HJ/T 397-2007, 固定源废气监测技术规范：  
+  https://www.mee.gov.cn/ywgz/fgbz/bz/bzwb/jcffbz/200712/t20071213_114278.shtml
+- 工业园区 VOCs 在线、激光雷达、走航、溯源联合监测试点答复：  
+  https://www.mee.gov.cn/xxgk2018/xxgk/xxgk13/202112/t20211202_962760.html
+- 四川生态环境监测用激光雷达走航发现扬尘和污染过程案例：  
+  https://www.mee.gov.cn/ywdt/dfnews/202003/t20200325_770566.shtml
 
 ---
 
