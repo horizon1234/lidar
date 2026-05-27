@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4c84bf" />
+    </marker>
+    <style>
+      .bg { fill:#f7fbff; stroke:#c5d7eb; stroke-width:2; }
+      .step { fill:#ffffff; stroke:#2f6fab; stroke-width:2; }
+      .accent { fill:#e9f3ff; stroke:#4c84bf; stroke-width:2; }
+      .title { font:700 28px 'Segoe UI', Arial, sans-serif; fill:#16324f; }
+      .label { font:700 20px 'Segoe UI', Arial, sans-serif; fill:#16324f; }
+      .body { font:16px 'Segoe UI', Arial, sans-serif; fill:#24435e; }
+      .small { font:14px 'Segoe UI', Arial, sans-serif; fill:#375a78; }
+      .arrow { stroke:#4c84bf; stroke-width:4; fill:none; marker-end:url(#arrow); }
+    </style>
+  </defs>
+
+  <rect x="20" y="20" width="1160" height="580" rx="24" class="bg" />
+  <text x="60" y="70" class="title">Algorithm Picture 1: From Raw Echo To Clean Signal</text>
+  <text x="60" y="105" class="body">Read it left to right. Each box removes one kind of non-target error before inversion starts.</text>
+
+  <rect x="45" y="170" width="160" height="210" rx="18" class="step" />
+  <text x="75" y="215" class="label">1. Raw Echo</text>
+  <text x="65" y="255" class="body">counts / voltage</text>
+  <text x="65" y="283" class="body">target + sunlight</text>
+  <text x="65" y="311" class="body">+ detector noise</text>
+  <text x="65" y="350" class="small">What the machine really</text>
+  <text x="65" y="372" class="small">measures first.</text>
+
+  <rect x="230" y="170" width="160" height="210" rx="18" class="step" />
+  <text x="258" y="215" class="label">2. Remove BG</text>
+  <text x="250" y="255" class="body">minus background</text>
+  <text x="250" y="283" class="body">minus dark current</text>
+  <text x="250" y="350" class="small">Take away the light</text>
+  <text x="250" y="372" class="small">that does not belong</text>
+  <text x="250" y="394" class="small">to the target.</text>
+
+  <rect x="415" y="170" width="160" height="210" rx="18" class="step" />
+  <text x="433" y="215" class="label">3. Detector Fix</text>
+  <text x="435" y="255" class="body">deadtime</text>
+  <text x="435" y="283" class="body">afterpulse</text>
+  <text x="435" y="350" class="small">Correct detector and</text>
+  <text x="435" y="372" class="small">electronics distortion.</text>
+
+  <rect x="600" y="170" width="160" height="210" rx="18" class="step" />
+  <text x="631" y="215" class="label">4. Normalize</text>
+  <text x="620" y="255" class="body">divide by laser E</text>
+  <text x="620" y="283" class="body">average many shots</text>
+  <text x="620" y="350" class="small">Make different pulses</text>
+  <text x="620" y="372" class="small">comparable.</text>
+
+  <rect x="785" y="170" width="160" height="210" rx="18" class="step" />
+  <text x="799" y="215" class="label">5. Geometry Fix</text>
+  <text x="805" y="255" class="body">RCS = P * R^2</text>
+  <text x="805" y="283" class="body">divide by overlap</text>
+  <text x="805" y="350" class="small">Undo distance loss</text>
+  <text x="805" y="372" class="small">and near-field bias.</text>
+
+  <rect x="970" y="170" width="180" height="210" rx="18" class="accent" />
+  <text x="1004" y="215" class="label">6. Quality Gate</text>
+  <text x="1000" y="255" class="body">SNR</text>
+  <text x="1000" y="283" class="body">cloud / rain mask</text>
+  <text x="1000" y="311" class="body">ready for inversion</text>
+  <text x="1000" y="350" class="small">Only now is the signal</text>
+  <text x="1000" y="372" class="small">clean enough for</text>
+  <text x="1000" y="394" class="small">alpha / beta retrieval.</text>
+
+  <line x1="205" y1="275" x2="230" y2="275" class="arrow" />
+  <line x1="390" y1="275" x2="415" y2="275" class="arrow" />
+  <line x1="575" y1="275" x2="600" y2="275" class="arrow" />
+  <line x1="760" y1="275" x2="785" y2="275" class="arrow" />
+  <line x1="945" y1="275" x2="970" y2="275" class="arrow" />
+
+  <rect x="70" y="455" width="1060" height="92" rx="20" class="accent" />
+  <text x="95" y="495" class="label">Key Message</text>
+  <text x="95" y="526" class="body">Preprocessing is not cosmetic. It removes non-target effects first, so later inversion does not turn noise into fake physics.</text>
+</svg>
