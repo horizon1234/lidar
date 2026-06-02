@@ -1,0 +1,17 @@
+{
+  "source": "Open-Meteo",
+  "latitude": 39.9042,
+  "longitude": 116.4074,
+  "start_date": "2026-05-30",
+  "end_date": "2026-05-31",
+  "record_count": 48,
+  "fields": [
+    "timestamp",
+    "pm25",
+    "pm10",
+    "temperature_c",
+    "relative_humidity",
+    "wind_speed_ms",
+    "wind_dir_deg"
+  ]
+}

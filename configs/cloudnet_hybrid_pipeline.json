@@ -1,0 +1,58 @@
+{
+  "source": {
+    "mode": "cloudnet_hybrid",
+    "root": ".",
+    "cloudnet": {
+      "site_id": "bucharest",
+      "site_name": "Bucharest",
+      "date": "2025-04-23",
+      "verify_ssl": false,
+      "local_file": "data/public/cloudnet/20250423_bucharest_chm15k_c60c931f.nc",
+      "download_url": "https://cloudnet.fmi.fi/api/download/product/7d0ade91-3fec-4d70-b79f-c332a77c21a9/20250423_bucharest_chm15k_c60c931f.nc",
+      "time_steps": 18,
+      "range_bin_count": 30,
+      "min_range_m": 75.0,
+      "max_range_m": 3200.0,
+      "pseudo_signal_scale": 600000.0
+    }
+  },
+  "site": {
+    "name": "Bucharest",
+    "latitude_deg": 44.344,
+    "longitude_deg": 26.012,
+    "altitude_m": 77.0
+  },
+  "simulation": {
+    "seed": 7,
+    "time_steps": 18,
+    "minutes_per_step": 20,
+    "range_bin_count": 30,
+    "range_bin_m": 50.0,
+    "ppi_elevation_deg": 8.0,
+    "ppi_azimuth_step_deg": 30.0,
+    "system_constant": 260000000.0,
+    "lidar_ratio_sr": 45.0
+  },
+  "retrieval": {
+    "aerosol_lidar_ratio_sr": 45.0,
+    "reference_aerosol_backscatter": 0.0004
+  },
+  "humidity": {
+    "dry_reference_rh": 0.45,
+    "hygroscopicity": 1.1
+  },
+  "pm_calibration": {
+    "train_ratio": 0.6,
+    "val_ratio": 0.2,
+    "surface_bin_count": 6
+  },
+  "hotspot": {
+    "pm25_threshold_ugm3": 80.0,
+    "scan_relative_pm25_threshold_ugm3": 8.0,
+    "scan_relative_dry_ext_threshold": 0.02,
+    "min_cells": 6
+  },
+  "evaluation": {
+    "sensitivity_lidar_ratios": [35.0, 45.0, 55.0]
+  }
+}

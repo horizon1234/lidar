@@ -1,0 +1,41 @@
+{
+  "site": {
+    "name": "Beijing Demo Yard",
+    "latitude_deg": 39.9042,
+    "longitude_deg": 116.4074,
+    "altitude_m": 48.0
+  },
+  "simulation": {
+    "seed": 7,
+    "time_steps": 18,
+    "minutes_per_step": 20,
+    "range_bin_count": 30,
+    "range_bin_m": 50.0,
+    "ppi_elevation_deg": 8.0,
+    "ppi_azimuth_step_deg": 30.0,
+    "system_constant": 260000000.0,
+    "lidar_ratio_sr": 45.0
+  },
+  "retrieval": {
+    "aerosol_lidar_ratio_sr": 45.0,
+    "reference_aerosol_backscatter": 0.0004
+  },
+  "humidity": {
+    "dry_reference_rh": 0.45,
+    "hygroscopicity": 1.1
+  },
+  "pm_calibration": {
+    "train_ratio": 0.6,
+    "val_ratio": 0.2,
+    "surface_bin_count": 6
+  },
+  "hotspot": {
+    "pm25_threshold_ugm3": 50.0,
+    "scan_relative_pm25_threshold_ugm3": 0.18,
+    "scan_relative_dry_ext_threshold": 0.02,
+    "min_cells": 3
+  },
+  "evaluation": {
+    "sensitivity_lidar_ratios": [35.0, 45.0, 55.0]
+  }
+}

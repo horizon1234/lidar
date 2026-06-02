@@ -1,0 +1,56 @@
+Metadata-Version: 2.4
+Name: atmospheric-lidar-pollution
+Version: 0.1.0
+Summary: Atmospheric lidar particulate monitoring demo with simulation, inversion, calibration, and hotspot detection.
+Author: GitHub Copilot
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+
+# Atmospheric Lidar Pollution
+
+这个仓库现在包含一套最小可运行的颗粒物大气激光雷达算法骨架，覆盖以下链路：
+
+- 回波模拟
+- L0 到 L2 预处理
+- Fernald 近似反演
+- 湿度修正
+- PM2.5 和 PM10 标定
+- 热点检测
+- ENU 坐标映射
+- 评测、消融和敏感性分析
+- 静态 Demo 资产生成
+
+## 快速开始
+
+1. 生成样例数据、L1 和 L2 结果、静态 Demo 页面：
+
+```powershell
+python scripts/build_demo_assets.py
+```
+
+1. 运行单元测试：
+
+```powershell
+python -m unittest discover tests -v
+```
+
+1. 启动轻量 API：
+
+```powershell
+python services/api/server.py --once
+```
+
+## 主要目录
+
+- `configs/` 默认配置
+- `lidar_core/` 算法主链
+- `services/` API 和批处理入口
+- `scripts/` 复现实验和 Demo 资产脚本
+- `tests/` 单元测试
+
+## 补充文档
+
+- `docs/project_supplement.md` 六项补充内容的正式落地说明
+- `docs/12_week_plan.md` 12 周落地计划
+- `docs/resume_project_entry.md` 简历项目版本
+- `data/public/README.md` 公开数据资产说明

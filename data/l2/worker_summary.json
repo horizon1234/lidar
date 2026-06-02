@@ -1,0 +1,32 @@
+{
+  "pm25": {
+    "mae": 2.159,
+    "rmse": 2.398,
+    "r2": 0.443
+  },
+  "pm10": {
+    "mae": 2.456,
+    "rmse": 2.489,
+    "r2": 0.37
+  },
+  "hotspot": {
+    "precision": 0.193,
+    "recall": 0.161,
+    "f1": 0.176,
+    "true_positive": 28,
+    "false_positive": 117,
+    "false_negative": 146
+  },
+  "drift": {
+    "station_count": 1,
+    "alert_count": 0
+  },
+  "runtime": {
+    "mean_latency_ms": 0.115,
+    "throughput_profiles_per_s": 4769.884
+  },
+  "retrieval_stability": {
+    "pm25_rmse_span": 0.118,
+    "reference_lidar_ratio_sr": 45.0
+  }
+}

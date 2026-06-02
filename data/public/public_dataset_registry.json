@@ -1,0 +1,40 @@
+[
+  {
+    "id": "open_meteo_beijing_ground_pm_meteo",
+    "modality": "ground_pm_and_meteorology",
+    "source": "Open-Meteo",
+    "access_url": "https://api.open-meteo.com/",
+    "sampling": "hourly",
+    "region": "Beijing, China",
+    "variables": [
+      "pm2_5",
+      "pm10",
+      "temperature_2m",
+      "relative_humidity_2m",
+      "windspeed_10m",
+      "winddirection_10m"
+    ],
+    "local_artifacts": [
+      "data/public/open_meteo_beijing_ground_pm_meteo.json",
+      "data/public/open_meteo_beijing_ground_pm_meteo.csv",
+      "data/public/open_meteo_beijing_fetch_manifest.json"
+    ],
+    "intended_use": "Ground-truth alignment sample for PM calibration and demo data assets"
+  },
+  {
+    "id": "cloudnet_public_profiles",
+    "modality": "ground_based_remote_sensing_profiles",
+    "source": "ACTRIS Cloudnet data portal",
+    "access_url": "https://cloudnet.fmi.fi/",
+    "sampling": "site dependent",
+    "variables": [
+      "attenuated_backscatter",
+      "classification_products",
+      "time_height_profiles"
+    ],
+    "local_artifacts": [
+      "data/public/README.md"
+    ],
+    "intended_use": "Public lidar-like profile source for replacing the synthetic input in later validation"
+  }
+]
