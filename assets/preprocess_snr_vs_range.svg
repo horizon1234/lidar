@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
+  <defs>
+    <style>
+      .bg { fill:#fafcff; }
+      .grid { stroke:#e0e6ee; stroke-width:1; stroke-dasharray:4 3; }
+      .axis { stroke:#4a5568; stroke-width:2; }
+      .curve { fill:none; stroke:#3b82f6; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
+      .fill-good { fill:#dcfce7; opacity:0.6; }
+      .fill-bad { fill:#fee2e2; opacity:0.5; }
+      .threshold { stroke:#ef4444; stroke-width:2; stroke-dasharray:8 4; }
+      .label { font:600 15px 'Segoe UI', Arial, sans-serif; fill:#1e293b; }
+      .small { font:13px 'Segoe UI', Arial, sans-serif; fill:#64748b; }
+      .title { font:700 22px 'Segoe UI', Arial, sans-serif; fill:#0f172a; }
+      .annotate { font:600 14px 'Segoe UI', Arial, sans-serif; }
+      .tick { stroke:#4a5568; stroke-width:1.5; }
+    </style>
+    <linearGradient id="curveFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.03"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="500" rx="16" class="bg"/>
+
+  <!-- Title -->
+  <text x="400" y="40" text-anchor="middle" class="title">SNR vs 距离 R — 典型分布示意</text>
+
+  <!-- Plot area: x=100..720, y=80..400 -->
+  <!-- Grid lines -->
+  <line x1="100" y1="130" x2="720" y2="130" class="grid"/>
+  <line x1="100" y1="180" x2="720" y2="180" class="grid"/>
+  <line x1="100" y1="230" x2="720" y2="230" class="grid"/>
+  <line x1="100" y1="280" x2="720" y2="280" class="grid"/>
+  <line x1="100" y1="330" x2="720" y2="330" class="grid"/>
+  <line x1="100" y1="380" x2="720" y2="380" class="grid"/>
+
+  <!-- Axes -->
+  <line x1="100" y1="80" x2="100" y2="400" class="axis"/>
+  <line x1="100" y1="400" x2="720" y2="400" class="axis"/>
+
+  <!-- Axis arrows -->
+  <polygon points="100,78 96,88 104,88" fill="#4a5568"/>
+  <polygon points="722,400 712,396 712,404" fill="#4a5568"/>
+
+  <!-- Y-axis label -->
+  <text x="40" y="245" text-anchor="middle" class="label" transform="rotate(-90 40 245)">SNR（信噪比）</text>
+
+  <!-- X-axis label -->
+  <text x="410" y="440" text-anchor="middle" class="label">距离 R</text>
+
+  <!-- X-axis ticks & labels -->
+  <line x1="100" y1="400" x2="100" y2="407" class="tick"/>
+  <text x="100" y="422" text-anchor="middle" class="small">0</text>
+  <line x1="200" y1="400" x2="200" y2="407" class="tick"/>
+  <text x="200" y="422" text-anchor="middle" class="small">500m</text>
+  <line x1="350" y1="400" x2="350" y2="407" class="tick"/>
+  <text x="350" y="422" text-anchor="middle" class="small">1km</text>
+  <line x1="500" y1="400" x2="500" y2="407" class="tick"/>
+  <text x="500" y="422" text-anchor="middle" class="small">2km</text>
+  <line x1="650" y1="400" x2="650" y2="407" class="tick"/>
+  <text x="650" y="422" text-anchor="middle" class="small">3km</text>
+
+  <!-- Y-axis ticks & labels -->
+  <line x1="93" y1="130" x2="100" y2="130" class="tick"/>
+  <text x="88" y="135" text-anchor="end" class="small">50</text>
+  <line x1="93" y1="200" x2="100" y2="200" class="tick"/>
+  <text x="88" y="205" text-anchor="end" class="small">30</text>
+  <line x1="93" y1="280" x2="100" y2="280" class="tick"/>
+  <text x="88" y="285" text-anchor="end" class="small">15</text>
+  <line x1="93" y1="350" x2="100" y2="350" class="tick"/>
+  <text x="88" y="355" text-anchor="end" class="small">5</text>
+
+  <!-- SNR curve fill (gradient under curve) -->
+  <path d="M100,100 C140,105 170,120 220,160 C280,210 350,270 430,320 C500,355 560,370 620,382 C660,388 700,392 720,394 L720,400 L100,400 Z"
+        fill="url(#curveFill)"/>
+
+  <!-- Green zone (SNR > threshold) -->
+  <rect x="100" y="80" width="420" height="290" rx="0" class="fill-good" opacity="0.15"/>
+
+  <!-- Red zone (SNR < threshold) - roughly right of threshold crossing -->
+  <rect x="520" y="330" width="200" height="70" rx="0" class="fill-bad" opacity="0.25"/>
+
+  <!-- SNR curve -->
+  <path d="M100,100 C140,105 170,120 220,160 C280,210 350,270 430,320 C500,355 560,370 620,382 C660,388 700,392 720,394"
+        class="curve"/>
+
+  <!-- Threshold line -->
+  <line x1="100" y1="340" x2="720" y2="340" class="threshold"/>
+  <text x="725" y="336" class="annotate" fill="#ef4444">SNR 阈值</text>
+  <text x="725" y="354" class="small" fill="#ef4444">（如 SNR=3）</text>
+
+  <!-- Threshold crossing indicator -->
+  <circle cx="490" cy="340" r="5" fill="#ef4444" stroke="white" stroke-width="2"/>
+
+  <!-- Annotations -->
+  <!-- Good zone label -->
+  <rect x="180" y="150" width="200" height="50" rx="12" fill="#dcfce7" stroke="#86efac" stroke-width="1.5"/>
+  <text x="280" y="172" text-anchor="middle" class="annotate" fill="#166534">✅ 数据可信</text>
+  <text x="280" y="190" text-anchor="middle" class="small" fill="#166534">可放心做反演</text>
+
+  <!-- Bad zone label -->
+  <rect x="560" y="355" width="150" height="40" rx="12" fill="#fee2e2" stroke="#fca5a5" stroke-width="1.5"/>
+  <text x="635" y="376" text-anchor="middle" class="annotate" fill="#991b1b">❌ 不可用</text>
+  <text x="635" y="391" text-anchor="middle" class="small" fill="#991b1b">跳过不处理</text>
+
+  <!-- Near/Far labels on curve -->
+  <circle cx="120" cy="103" r="4" fill="#3b82f6"/>
+  <text x="125" y="95" class="annotate" fill="#1e40af">近处：SNR ≈ 50</text>
+
+  <circle cx="650" cy="385" r="4" fill="#3b82f6"/>
+  <text x="620" y="418" class="annotate" fill="#1e40af">远处：SNR ≈ 1</text>
+
+  <!-- Footer note -->
+  <text x="400" y="478" text-anchor="middle" class="small" fill="#94a3b8">
+    SNR = P_signal(R) / σ_noise(R)  —  近处信号强所以 SNR 高，远处信号弱所以 SNR 低
+  </text>
+</svg>
