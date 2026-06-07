@@ -1,77 +1,159 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620">
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="680" viewBox="0 0 1300 680">
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4c84bf" />
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6" />
     </marker>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#1e40af;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="boxGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#eff6ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#dbeafe;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="finalGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#dcfce7;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#bbf7d0;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="noteGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#fef3c7;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#fde68a;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-3%" y="-3%" width="106%" height="106%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-color="#00000020"/>
+    </filter>
     <style>
-      .bg { fill:#f7fbff; stroke:#c5d7eb; stroke-width:2; }
-      .step { fill:#ffffff; stroke:#2f6fab; stroke-width:2; }
-      .accent { fill:#e9f3ff; stroke:#4c84bf; stroke-width:2; }
-      .title { font:700 28px 'Segoe UI', Arial, sans-serif; fill:#16324f; }
-      .label { font:700 20px 'Segoe UI', Arial, sans-serif; fill:#16324f; }
-      .body { font:16px 'Segoe UI', Arial, sans-serif; fill:#24435e; }
-      .small { font:14px 'Segoe UI', Arial, sans-serif; fill:#375a78; }
-      .arrow { stroke:#4c84bf; stroke-width:4; fill:none; marker-end:url(#arrow); }
+      .box { fill:url(#boxGrad); stroke:#3b82f6; stroke-width:2; rx:16; filter:url(#shadow); }
+      .final { fill:url(#finalGrad); stroke:#16a34a; stroke-width:2.5; rx:16; filter:url(#shadow); }
+      .title { font:700 26px 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', sans-serif; fill:#ffffff; }
+      .subtitle { font:400 16px 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', sans-serif; fill:#93c5fd; }
+      .label { font:700 18px 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', sans-serif; fill:#1e3a5f; }
+      .formula { font:italic 15px 'Consolas', 'Courier New', monospace; fill:#7c3aed; }
+      .desc { font:400 14px 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', sans-serif; fill:#475569; }
+      .note { font:400 14px 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', sans-serif; fill:#92400e; }
+      .noteTitle { font:700 18px 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', sans-serif; fill:#92400e; }
+      .arrow { stroke:#3b82f6; stroke-width:3.5; fill:none; marker-end:url(#arrow); }
+      .badge { font:700 12px 'Microsoft YaHei', sans-serif; fill:#ffffff; }
     </style>
   </defs>
 
-  <rect x="20" y="20" width="1160" height="580" rx="24" class="bg" />
-  <text x="60" y="70" class="title">Algorithm Picture 1: From Raw Echo To Clean Signal</text>
-  <text x="60" y="105" class="body">Read it left to right. Each box removes one kind of non-target error before inversion starts.</text>
+  <!-- 背景 -->
+  <rect x="10" y="10" width="1280" height="660" rx="24" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" />
 
-  <rect x="45" y="170" width="160" height="210" rx="18" class="step" />
-  <text x="75" y="215" class="label">1. Raw Echo</text>
-  <text x="65" y="255" class="body">counts / voltage</text>
-  <text x="65" y="283" class="body">target + sunlight</text>
-  <text x="65" y="311" class="body">+ detector noise</text>
-  <text x="65" y="350" class="small">What the machine really</text>
-  <text x="65" y="372" class="small">measures first.</text>
+  <!-- 标题栏 -->
+  <rect x="10" y="10" width="1280" height="70" rx="24" fill="url(#headerGrad)" />
+  <rect x="10" y="50" width="1280" height="30" fill="url(#headerGrad)" />
+  <text x="40" y="50" class="title">📐 预处理总流程：从原始回波到干净信号</text>
+  <text x="40" y="72" class="subtitle">从左到右逐步阅读。每个方框去除一种非目标误差，全部完成后才能开始反演。</text>
 
-  <rect x="230" y="170" width="160" height="210" rx="18" class="step" />
-  <text x="258" y="215" class="label">2. Remove BG</text>
-  <text x="250" y="255" class="body">minus background</text>
-  <text x="250" y="283" class="body">minus dark current</text>
-  <text x="250" y="350" class="small">Take away the light</text>
-  <text x="250" y="372" class="small">that does not belong</text>
-  <text x="250" y="394" class="small">to the target.</text>
+  <!-- ========== 步骤 1：原始回波 ========== -->
+  <rect x="35" y="120" width="175" height="240" class="box" />
+  <circle cx="65" cy="148" r="16" fill="#3b82f6" />
+  <text x="65" y="153" class="badge" text-anchor="middle">1</text>
+  <text x="90" y="153" class="label">原始回波</text>
+  <text x="50" y="185" class="desc">• 计数 / 电压值</text>
+  <text x="50" y="207" class="desc">• 目标信号</text>
+  <text x="50" y="229" class="desc">• + 太阳背景光</text>
+  <text x="50" y="251" class="desc">• + 探测器暗噪声</text>
+  <line x1="50" y1="270" x2="195" y2="270" stroke="#93c5fd" stroke-width="1" />
+  <text x="50" y="292" class="desc">设备实际测量到的</text>
+  <text x="50" y="314" class="desc">原始电压/计数值</text>
+  <text x="50" y="348" class="formula">P_raw(R)</text>
 
-  <rect x="415" y="170" width="160" height="210" rx="18" class="step" />
-  <text x="433" y="215" class="label">3. Detector Fix</text>
-  <text x="435" y="255" class="body">deadtime</text>
-  <text x="435" y="283" class="body">afterpulse</text>
-  <text x="435" y="350" class="small">Correct detector and</text>
-  <text x="435" y="372" class="small">electronics distortion.</text>
+  <!-- 箭头 1→2 -->
+  <line x1="210" y1="240" x2="235" y2="240" class="arrow" />
 
-  <rect x="600" y="170" width="160" height="210" rx="18" class="step" />
-  <text x="631" y="215" class="label">4. Normalize</text>
-  <text x="620" y="255" class="body">divide by laser E</text>
-  <text x="620" y="283" class="body">average many shots</text>
-  <text x="620" y="350" class="small">Make different pulses</text>
-  <text x="620" y="372" class="small">comparable.</text>
+  <!-- ========== 步骤 2：背景扣除 ========== -->
+  <rect x="240" y="120" width="175" height="240" class="box" />
+  <circle cx="270" cy="148" r="16" fill="#3b82f6" />
+  <text x="270" y="153" class="badge" text-anchor="middle">2</text>
+  <text x="295" y="153" class="label">背景扣除</text>
+  <text x="255" y="185" class="desc">• 减太阳/天空背景</text>
+  <text x="255" y="207" class="desc">• 减探测器暗电流</text>
+  <text x="255" y="229" class="desc">• 减电子学偏置</text>
+  <line x1="255" y1="248" x2="400" y2="248" stroke="#93c5fd" stroke-width="1" />
+  <text x="255" y="270" class="desc">把不属于激光回波</text>
+  <text x="255" y="292" class="desc">的"底噪"全部拿掉</text>
+  <text x="255" y="348" class="formula">P − P_bg</text>
 
-  <rect x="785" y="170" width="160" height="210" rx="18" class="step" />
-  <text x="799" y="215" class="label">5. Geometry Fix</text>
-  <text x="805" y="255" class="body">RCS = P * R^2</text>
-  <text x="805" y="283" class="body">divide by overlap</text>
-  <text x="805" y="350" class="small">Undo distance loss</text>
-  <text x="805" y="372" class="small">and near-field bias.</text>
+  <!-- 箭头 2→3 -->
+  <line x1="415" y1="240" x2="440" y2="240" class="arrow" />
 
-  <rect x="970" y="170" width="180" height="210" rx="18" class="accent" />
-  <text x="1004" y="215" class="label">6. Quality Gate</text>
-  <text x="1000" y="255" class="body">SNR</text>
-  <text x="1000" y="283" class="body">cloud / rain mask</text>
-  <text x="1000" y="311" class="body">ready for inversion</text>
-  <text x="1000" y="350" class="small">Only now is the signal</text>
-  <text x="1000" y="372" class="small">clean enough for</text>
-  <text x="1000" y="394" class="small">alpha / beta retrieval.</text>
+  <!-- ========== 步骤 3：探测器校正 ========== -->
+  <rect x="445" y="120" width="175" height="240" class="box" />
+  <circle cx="475" cy="148" r="16" fill="#3b82f6" />
+  <text x="475" y="153" class="badge" text-anchor="middle">3</text>
+  <text x="500" y="153" class="label">探测器校正</text>
+  <text x="460" y="185" class="desc">• 死时间校正</text>
+  <text x="460" y="207" class="desc">• 后脉冲校正</text>
+  <text x="460" y="229" class="desc">• 增益线性化</text>
+  <line x1="460" y1="248" x2="605" y2="248" stroke="#93c5fd" stroke-width="1" />
+  <text x="460" y="270" class="desc">修正探测器和电子学</text>
+  <text x="460" y="292" class="desc">引入的非线性畸变</text>
+  <text x="460" y="348" class="formula">C_dead · C_after</text>
 
-  <line x1="205" y1="275" x2="230" y2="275" class="arrow" />
-  <line x1="390" y1="275" x2="415" y2="275" class="arrow" />
-  <line x1="575" y1="275" x2="600" y2="275" class="arrow" />
-  <line x1="760" y1="275" x2="785" y2="275" class="arrow" />
-  <line x1="945" y1="275" x2="970" y2="275" class="arrow" />
+  <!-- 箭头 3→4 -->
+  <line x1="620" y1="240" x2="645" y2="240" class="arrow" />
 
-  <rect x="70" y="455" width="1060" height="92" rx="20" class="accent" />
-  <text x="95" y="495" class="label">Key Message</text>
-  <text x="95" y="526" class="body">Preprocessing is not cosmetic. It removes non-target effects first, so later inversion does not turn noise into fake physics.</text>
+  <!-- ========== 步骤 4：归一化 ========== -->
+  <rect x="650" y="120" width="175" height="240" class="box" />
+  <circle cx="680" cy="148" r="16" fill="#3b82f6" />
+  <text x="680" y="153" class="badge" text-anchor="middle">4</text>
+  <text x="705" y="153" class="label">归一化</text>
+  <text x="665" y="185" class="desc">• 除以激光脉冲能量</text>
+  <text x="665" y="207" class="desc">• 多脉冲累加平均</text>
+  <text x="665" y="229" class="desc">• 能量监测归一化</text>
+  <line x1="665" y1="248" x2="810" y2="248" stroke="#93c5fd" stroke-width="1" />
+  <text x="665" y="270" class="desc">让不同脉冲之间</text>
+  <text x="665" y="292" class="desc">的信号可以比较</text>
+  <text x="665" y="348" class="formula">P / E₀</text>
+
+  <!-- 箭头 4→5 -->
+  <line x1="825" y1="240" x2="850" y2="240" class="arrow" />
+
+  <!-- ========== 步骤 5：几何校正 ========== -->
+  <rect x="855" y="120" width="175" height="240" class="box" />
+  <circle cx="885" cy="148" r="16" fill="#3b82f6" />
+  <text x="885" y="153" class="badge" text-anchor="middle">5</text>
+  <text x="910" y="153" class="label">几何校正</text>
+  <text x="870" y="185" class="desc">• 距离平方校正 R²</text>
+  <text x="870" y="207" class="desc">• 重叠因子校正</text>
+  <text x="870" y="229" class="desc">• RCS = P · R²</text>
+  <line x1="870" y1="248" x2="1015" y2="248" stroke="#93c5fd" stroke-width="1" />
+  <text x="870" y="270" class="desc">消除距离衰减和</text>
+  <text x="870" y="292" class="desc">近距离盲区偏差</text>
+  <text x="870" y="348" class="formula">RCS = P · R² / O(R)</text>
+
+  <!-- 箭头 5→6 -->
+  <line x1="1030" y1="240" x2="1055" y2="240" class="arrow" />
+
+  <!-- ========== 步骤 6：质量门控（最终步骤） ========== -->
+  <rect x="1060" y="120" width="195" height="240" class="final" />
+  <circle cx="1090" cy="148" r="16" fill="#16a34a" />
+  <text x="1090" y="153" class="badge" text-anchor="middle">6</text>
+  <text x="1115" y="153" class="label">质量门控 ✓</text>
+  <text x="1075" y="185" class="desc">• 信噪比 SNR 检查</text>
+  <text x="1075" y="207" class="desc">• 云/雨掩膜剔除</text>
+  <text x="1075" y="229" class="desc">• 异常值检测</text>
+  <text x="1075" y="251" class="desc">• 标记数据质量等级</text>
+  <line x1="1075" y1="268" x2="1240" y2="268" stroke="#86efac" stroke-width="1" />
+  <text x="1075" y="290" class="desc">只有通过全部检查</text>
+  <text x="1075" y="312" class="desc">的信号才能进入</text>
+  <text x="1075" y="334" class="desc">反演算法</text>
+  <text x="1075" y="348" class="formula">→ 准备反演 α, β</text>
+
+  <!-- ========== 底部流程线（装饰） ========== -->
+  <line x1="60" y1="400" x2="1230" y2="400" stroke="#e2e8f0" stroke-width="2" stroke-dasharray="6,4" />
+
+  <!-- ========== 底部核心信息框 ========== -->
+  <rect x="35" y="450" width="1230" height="90" rx="18" fill="url(#noteGrad)" stroke="#f59e0b" stroke-width="2" />
+  <text x="65" y="483" class="noteTitle">💡 核心要点</text>
+  <text x="65" y="510" class="note">预处理不是"锦上添花"，而是必需步骤。它逐层剥离非目标信号（背景光、探测器噪声、几何偏差），</text>
+  <text x="65" y="530" class="note">确保后续反演算法（Klett / Fernald）输入的是干净信号，而不是把噪声误当成物理信号。</text>
+
+  <!-- ========== 底部数据流向说明 ========== -->
+  <rect x="35" y="560" width="1230" height="90" rx="18" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5" />
+  <text x="65" y="593" class="label" style="fill:#475569;">🔄 数据走向</text>
+  <text x="65" y="618" class="desc" style="fill:#64748b;">原始信号 → 背景扣除 → 探测器校正 → 归一化 → 几何校正 → 质量门控 → 反演（消光系数 α / 后向散射系数 β / 退偏比 δ）→ PM₂.₅/PM₁₀ 浓度估算</text>
+  <text x="65" y="640" class="desc" style="fill:#64748b;">每一级的输出是下一级的输入。跳过任何一步都会导致最终结果偏差。</text>
 </svg>
