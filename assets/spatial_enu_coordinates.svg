@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#46637f"/></marker>
+    <style>
+      .bg{fill:#fbfcff;stroke:#cdd8e8;stroke-width:2}.card{fill:#fff;stroke:#9bb4cc;stroke-width:2}.axis{stroke:#46637f;stroke-width:4;marker-end:url(#arrow)}.grid{stroke:#d9e3ee;stroke-width:2}.east{stroke:#2f8f6b}.north{stroke:#4c84bf}.up{stroke:#c98639}.point{fill:#e55245;stroke:#8c2a22;stroke-width:3}.lidar{fill:#246b8f;stroke:#143d52;stroke-width:3}.dash{stroke:#8aa6c4;stroke-width:2;stroke-dasharray:8 7}.title{font:700 30px 'Microsoft YaHei','PingFang SC','Segoe UI',Arial,sans-serif;fill:#16324f}.label{font:700 22px 'Microsoft YaHei','PingFang SC','Segoe UI',Arial,sans-serif;fill:#16324f}.body{font:18px 'Microsoft YaHei','PingFang SC','Segoe UI',Arial,sans-serif;fill:#29465d}.small{font:16px 'Microsoft YaHei','PingFang SC','Segoe UI',Arial,sans-serif;fill:#49657d}.mono{font:700 18px Consolas,'Microsoft YaHei',monospace;fill:#16324f}
+    </style>
+  </defs>
+  <rect x="20" y="20" width="1160" height="610" rx="22" class="bg"/>
+  <text x="60" y="72" class="title">第 13 章示意图 2：ENU 就是以雷达为原点的“东、北、上”</text>
+  <rect x="65" y="110" width="680" height="475" rx="18" class="card"/>
+  <g transform="translate(355,375)">
+    <line x1="0" y1="0" x2="250" y2="0" class="axis east"/>
+    <line x1="0" y1="0" x2="-150" y2="-140" class="axis north"/>
+    <line x1="0" y1="0" x2="0" y2="-245" class="axis up"/>
+    <text x="260" y="8" class="label">E 东向 x+</text>
+    <text x="-245" y="-145" class="label">N 北向 y+</text>
+    <text x="12" y="-245" class="label">U 向上 z+</text>
+    <circle cx="0" cy="0" r="24" class="lidar"/>
+    <text x="-44" y="48" class="label">LiDAR</text>
+    <circle cx="150" cy="-92" r="18" class="point"/>
+    <line x1="0" y1="0" x2="150" y2="-92" stroke="#f08a37" stroke-width="5" stroke-linecap="round"/>
+    <line x1="150" y1="-92" x2="150" y2="0" class="dash"/>
+    <line x1="150" y1="0" x2="0" y2="0" class="dash"/>
+    <text x="162" y="-100" class="label">粉尘点</text>
+    <text x="62" y="28" class="small">东向距离 x</text>
+    <text x="104" y="-45" class="small">北向距离 y</text>
+    <text x="12" y="-92" class="small">高度 z</text>
+  </g>
+  <rect x="790" y="130" width="340" height="390" rx="18" class="card"/>
+  <text x="825" y="178" class="label">怎么读 ENU 坐标？</text>
+  <text x="825" y="230" class="body">center_enu_m = [86, 99, 23]</text>
+  <text x="825" y="275" class="body">意思是：</text>
+  <text x="850" y="315" class="body">往东 86 m</text>
+  <text x="850" y="355" class="body">往北 99 m</text>
+  <text x="850" y="395" class="body">相对雷达高 23 m</text>
+  <text x="825" y="465" class="small">它不是经纬度，而是一个站点</text>
+  <text x="825" y="490" class="small">附近最方便做工程计算的坐标。</text>
+  <rect x="130" y="592" width="940" height="42" rx="13" fill="#eef8ef" stroke="#5c9b62" stroke-width="2"/>
+  <text x="165" y="619" class="body">记忆句：ENU 不是全球地图坐标，而是“以雷达为原点”的本地小坐标系。</text>
+</svg>
