@@ -46,6 +46,16 @@ target_link_libraries(lidar_fetch_public_ground_data PRIVATE lidar_demo)
 add_executable(lidar_fetch_cloudnet_public_sample cpp/apps/fetch_cloudnet_public_sample.cpp)
 target_link_libraries(lidar_fetch_cloudnet_public_sample PRIVATE lidar_demo)
 
+# ---- 第 19 章教学算例 (cpp/examples/) ----
+# 这些算例是纯 C++ 项目, 只依赖 STL, 不依赖 lidar_demo 库或 NetCDF,
+# 这样学习者只看算法本身, 不被框架代码绕进去。
+add_executable(lidar_example_1d_ray cpp/examples/example_1d_ray.cpp)
+add_executable(lidar_example_2d_ppi cpp/examples/example_2d_ppi.cpp)
+add_executable(lidar_example_3d_rhi cpp/examples/example_3d_rhi.cpp)
+add_executable(lidar_run_full_demo  cpp/examples/run_full_demo.cpp)
+# run_full_demo 调用 lidar_demo 库 + 子进程串联 stage 1-3, 所以需要链接库
+target_link_libraries(lidar_run_full_demo PRIVATE lidar_demo)
+
 enable_testing()
 
 add_executable(lidar_pipeline_test cpp/tests/test_pipeline.cpp)

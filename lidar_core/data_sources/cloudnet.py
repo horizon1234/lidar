@@ -11,11 +11,20 @@ import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from netCDF4 import Dataset, num2date
-
 from lidar_core.io import read_json, write_json
 from lidar_core.models import GroundMeasurement, LidarProfile, SiteInfo
 from lidar_core.simulation.scene import _build_overlap, _simulate_profile_fields, _simulate_raw_counts
+
+
+def _import_netcdf4():
+    """延迟导入 netCDF4。模拟模式不需要它，只有 Cloudnet hybrid 模式才需要。"""
+    try:
+        from netCDF4 import Dataset, num2date
+    except ImportError as exc:  # pragma: no cover - 环境相关
+        raise ImportError(
+            "Cloudnet hybrid 模式需要 netCDF4，请运行: pip install netCDF4"
+        ) from exc
+    return Dataset, num2date
 
 
 def _safe_float(value) -> float:
@@ -189,6 +198,7 @@ def _filter_range_indices(range_values_m: list[float], min_range_m: float, max_r
 
 
 def _build_real_stare_profiles(config: dict, site: SiteInfo, ground_measurements: list[GroundMeasurement], source_root: Path) -> list[LidarProfile]:
+    Dataset, num2date = _import_netcdf4()
     cloudnet = config["source"]["cloudnet"]
     file_path = source_root / cloudnet["local_file"]
     dataset = Dataset(_netcdf_compatible_path(file_path))
@@ -268,6 +278,7 @@ def _build_real_stare_profiles(config: dict, site: SiteInfo, ground_measurements
 
 
 def _build_ground_measurements(config: dict, site: SiteInfo, source_root: Path) -> list[GroundMeasurement]:
+    Dataset, num2date = _import_netcdf4()
     cloudnet = config["source"]["cloudnet"]
     date = cloudnet["date"]
     records = _fetch_open_meteo_ground_records(site.latitude_deg, site.longitude_deg, date, source_root / "data" / "public" / "cloudnet")
@@ -367,6 +378,7 @@ def _build_synthetic_ppi_profiles(config: dict, site: SiteInfo, ground_measureme
 
 
 def load_cloudnet_hybrid_campaign(config: dict):
+    Dataset, _num2date = _import_netcdf4()
     source_root = Path(config["source"].get("root", ".")).resolve()
     cloudnet = config["source"]["cloudnet"]
     local_file = source_root / cloudnet["local_file"]

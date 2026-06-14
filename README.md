@@ -60,10 +60,51 @@ python services/api/server.py --once
 
 - `cpp/` C++ 版本算法主链和入口程序
 - `configs/` 默认配置
-- `lidar_core/` 算法主链
-- `services/` API 和批处理入口
+- `lidar_core/` Python 参考实现 (与 C++ 主链等价)
+- `services/` API 和批处理入口 (Python)
 - `scripts/` 复现实验和 Demo 资产脚本
 - `tests/` 单元测试
+
+## 第 19 章教学算例 (`cpp/examples/`)
+
+`cpp/examples/` 目录里是与《激光颗粒物监测系统入门手册》第 19 章一一对应的教学算例,所有算法用纯 C++ 实现,不依赖 lidar_demo 库,便于学习者按章节阅读。每个程序都会:
+
+- 自己生成逼真假数据 (用物理模型正向仿真, 含 Gaussian 羽流、LiDAR 方程、射击噪声)
+- 完整实现每一步算法 (预处理 -> RCS -> Klett 反演 -> 湿度修正 -> PM 标定 -> 阈值 -> ENU -> 热点)
+- 在终端打印每一步中间结果, 并输出 JSON 到 `data/examples/`
+
+### 一键运行 (4 个 stage 串联)
+
+```powershell
+cmake -S . -B build
+cmake --build build --config Release
+
+# 一键运行 4 个 stage (一维 + PPI + RHI + 完整 pipeline)
+build\lidar_run_full_demo
+
+# 或分别运行
+build\lidar_example_1d_ray
+build\lidar_example_2d_ppi
+build\lidar_example_3d_rhi
+```
+
+| 程序 | 对应章节 | 演示内容 |
+|---|---|---|
+| `lidar_example_1d_ray` | 19.1-19.15 | 单条射线: 从原始 photon counts 到热点告警 (13 步算法) |
+| `lidar_example_2d_ppi` | 19.17-19.27 | 二维 PPI: 水平扫描面 + 8 邻域连通域 + 喷雾目标角 |
+| `lidar_example_3d_rhi` | 19.28-19.37 | 二维 RHI: 垂直剖面 + 层顶层底 + 羽流抬升判断 |
+| `lidar_run_full_demo` | 全部 | 串联上述 3 个 + 调用完整 pipeline |
+
+输出文件:
+
+- `data/examples/1d_ray_result.json` — 一维射线每一步中间量 + 热点事件
+- `data/examples/2d_ppi_result.json` — 二维 PM 矩阵 + mask + 连通域 + 质心 + 目标角
+- `data/examples/3d_rhi_result.json` — RHI 剖面 + 层底层顶 + 剖面质心 + 形态描述
+
+预期结果 (与文档第 19 章给定值一致):
+- 一维射线 120m 处 PM2.5 峰值约 67 µg/m³
+- PPI 二维热点质心方位角 = 40.4°, 仰角 = 10.0°
+- RHI 层底 = 26.4m, 层顶 = 51.1m, 厚度 = 24.7m
 
 ## 补充文档
 
