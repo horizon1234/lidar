@@ -6,7 +6,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(NetCDF REQUIRED)
+find_package(netCDF REQUIRED)
+find_package(CURL REQUIRED)
 
 add_library(lidar_demo STATIC
     cpp/src/lidar_demo.cpp
@@ -14,13 +15,14 @@ add_library(lidar_demo STATIC
 
 target_include_directories(lidar_demo PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include
-    ${NetCDF_INCLUDE_DIRS}
+    ${netCDF_INCLUDE_DIRS}
 )
 
 target_compile_definitions(lidar_demo PRIVATE LIDAR_DEMO_HAS_NETCDF=1)
 
 target_link_libraries(lidar_demo PUBLIC
-    ${NetCDF_LIBRARIES}
+    ${netCDF_LIBRARIES}
+    CURL::libcurl
 )
 
 if (WIN32)
