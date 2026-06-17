@@ -28,7 +28,7 @@
 
   <rect x="65" y="105" width="390" height="285" rx="16" class="panel" />
   <text x="95" y="145" class="label">原始回波 P(R)</text>
-  <text x="95" y="174" class="small">远处天然变暗，不能直接读成污染浓度</text>
+  <text x="95" y="174" class="small">几何扩散+传播衰减，远处急剧变暗</text>
   <line x1="115" y1="340" x2="405" y2="340" class="axis" />
   <line x1="115" y1="340" x2="115" y2="205" class="axis" />
   <line x1="115" y1="295" x2="405" y2="295" class="grid" />
@@ -44,14 +44,18 @@
 
   <rect x="595" y="105" width="390" height="285" rx="16" class="panel" />
   <text x="625" y="145" class="label">距离校正后的初步图层</text>
-  <text x="625" y="174" class="small">先抵消几何变暗，再看哪里有结构</text>
+  <text x="625" y="174" class="small">实线=实测｜虚线=干净大气（校正后仍缓降）</text>
   <line x1="645" y1="340" x2="935" y2="340" class="axis" />
   <line x1="645" y1="340" x2="645" y2="205" class="axis" />
   <line x1="645" y1="295" x2="935" y2="295" class="grid" />
   <line x1="645" y1="250" x2="935" y2="250" class="grid" />
-  <polyline points="655,300 710,292 765,262 820,225 875,270 925,282" class="curve2" />
-  <ellipse cx="818" cy="232" rx="52" ry="30" fill="#ffe0c0" stroke="#d07a26" stroke-width="2" />
-  <text x="775" y="215" class="small">可能的颗粒物团</text>
+  <!-- 干净大气参考：R² 校正后仍单调缓降 -->
+  <polyline points="655,283 720,294 790,304 860,312 925,318" fill="none" stroke="#9aa7b5" stroke-width="4" stroke-dasharray="9,7" stroke-linecap="round" />
+  <!-- 实测：整体仍下降，污染团处只有"小幅凸起"，过团后骤降 -->
+  <polyline points="655,283 720,300 790,288 860,326 925,336" class="curve2" />
+  <ellipse cx="790" cy="296" rx="42" ry="34" fill="#ffe0c0" stroke="#d07a26" stroke-width="2" />
+  <text x="725" y="272" class="small">污染团：只比下降趋势凸起一点</text>
+  <text x="833" y="320" class="small">过团骤降</text>
   <text x="645" y="366" class="small">近</text>
   <text x="904" y="366" class="small">远</text>
 
@@ -72,5 +76,5 @@
   <text x="920" y="496" class="body">再去拆出消光和散射</text>
 
   <rect x="170" y="560" width="860" height="48" rx="14" class="panel" />
-  <text x="200" y="591" class="body">记忆句：先把“远处天然更暗”拿掉，才能开始看空气结构。</text>
+  <text x="180" y="591" class="body">记忆句：R² 只抵消几何变暗；传播衰减仍在，所以局部凸起才是真信号。</text>
 </svg>
