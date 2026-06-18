@@ -38,6 +38,10 @@ EDGE_CANDIDATES = [
 CHROME_CANDIDATES = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
 ]
 
 
@@ -49,6 +53,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <title>{title}</title>
+<base href="{base_href}">
 <link rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 <script defer
@@ -222,7 +227,8 @@ def convert_md_to_html(md_path: Path) -> str:
         output_format="html5",
     )
     title = md_path.stem
-    return HTML_TEMPLATE.format(title=title, body=html_body)
+    base_href = DOCS_DIR.as_uri() + "/"
+    return HTML_TEMPLATE.format(title=title, base_href=base_href, body=html_body)
 
 
 def html_to_pdf(chromium: str, html_path: Path, pdf_path: Path) -> None:
@@ -231,6 +237,7 @@ def html_to_pdf(chromium: str, html_path: Path, pdf_path: Path) -> None:
         chromium,
         "--headless=new",
         "--disable-gpu",
+        "--allow-file-access-from-files",
         "--no-pdf-header-footer",
         "--run-all-compositor-stages-before-draw",
         "--virtual-time-budget=8000",  # 等待 KaTeX 渲染完成
@@ -282,7 +289,9 @@ def main() -> int:
 
     print(f"[INFO] 共发现 {len(targets)} 个文件待转换。\n")
 
-    tmp_html_dir = PDF_DIR / "_html_tmp"
+    # HTML 模板里使用 <base href="docs/">，让 Markdown 里的 ../assets/...
+    # 继续解析到项目根目录的 assets/，否则 PDF 里会只出现坏图标。
+    tmp_html_dir = DOCS_DIR / "_html_tmp"
     tmp_html_dir.mkdir(exist_ok=True)
 
     ok, fail = 0, 0
