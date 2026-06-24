@@ -70,6 +70,11 @@ public:
      */
     bool has_client() const;
 
+    /**
+     * @brief 判断是否已成功绑定并开始监听。
+     */
+    bool is_listening() const;
+
 private:
     std::uint16_t port_;
     int listen_socket_;  ///< POSIX: fd; Windows: SOCKET cast to int

@@ -17,6 +17,7 @@
 #include <chrono>
 #include <csignal>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 
@@ -77,9 +78,36 @@ int main(int argc, char* argv[]) {
     };
 
     // ---- 在独立线程中运行服务器 ----
+    std::atomic<std::string*> startup_error{nullptr};
+    std::string error_msg;
     std::thread server_thread([&]() {
-        server.start(handler);
+        try {
+            server.start(handler);
+        } catch (const std::exception& e) {
+            error_msg = e.what();
+            startup_error.store(&error_msg);
+        }
     });
+
+    // 等待服务器启动（或失败），最多 2 秒
+    for (int i = 0; i < 20 && !startup_error.load(); ++i) {
+        if (server.is_listening()) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    if (startup_error.load()) {
+        std::string* err = startup_error.load();
+        std::cerr << "\n[server] 启动失败: " << *err << "\n";
+        std::cerr << "[server] 提示: 端口 " << port
+                  << " 可能已被占用。可以用以下命令排查:\n"
+                  << "         lsof -i :" << port
+                  << "   或   ps aux | grep lidar_sim_server\n"
+                  << "         kill <PID>   或   kill -9 <PID>\n";
+        g_should_stop = true;
+        server.stop();
+        if (server_thread.joinable()) server_thread.join();
+        return 1;
+    }
 
     std::cerr << "[server] Listening on port " << port << ", waiting for client...\n";
 

@@ -173,4 +173,8 @@ bool TcpServer::has_client() const {
     return client_socket_ >= 0;
 }
 
+bool TcpServer::is_listening() const {
+    return listen_socket_ >= 0;
+}
+
 } // namespace lidar_server
