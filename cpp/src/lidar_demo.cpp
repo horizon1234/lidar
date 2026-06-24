@@ -3117,7 +3117,8 @@ DetectionResult detect_hotspots(
         const auto* processed = sorted_profiles[azimuth_index];
         for (int range_index = 0; range_index < range_count; ++range_index) {
             int linear_index = azimuth_index * range_count + range_index;
-            result.truth_mask[linear_index] = processed->profile.true_hotspot_mask[range_index];
+            result.truth_mask[linear_index] = (range_index < static_cast<int>(processed->profile.true_hotspot_mask.size()))
+                ? processed->profile.true_hotspot_mask[range_index] : 0;
             bool absolute_hotspot = processed->pm25[range_index] >= threshold_ugm3;
             bool relative_hotspot = (processed->pm25[range_index] - baseline_pm25 >= relative_pm25_threshold)
                 && (processed->dry_extinction[range_index] - baseline_dry_ext >= relative_dry_ext_threshold);
@@ -4533,6 +4534,112 @@ Json build_summary_payload(const Json& results) {
         {"latest_hotspots", results.at("hotspots")},
         {"alert_count", static_cast<int>(results.at("alerts").array_items().size())},
     };
+}
+
+// ============================================================================
+// 单步处理 API —— 供实时客户端逐帧处理使用
+// ============================================================================
+
+ProcessedProfile process_single_profile(
+    const LidarProfile& profile,
+    const RetrievalConfig& retrieval,
+    const HumidityConfig& humidity
+) {
+    auto started_at = std::chrono::steady_clock::now();
+
+    PreprocessResult preprocessed = preprocess_profile(profile);
+    auto inversion = run_fernald_inversion(
+        profile,
+        preprocessed.attenuated_backscatter,
+        retrieval.aerosol_lidar_ratio_sr,
+        retrieval.reference_aerosol_backscatter
+    );
+    std::vector<double> dry_extinction = apply_humidity_correction(
+        inversion.first,
+        profile.relative_humidity,
+        humidity.dry_reference_rh,
+        humidity.hygroscopicity
+    );
+
+    // 经验 PM 估算：用干消光 × 转换系数近似 PM2.5（无地面标定时的粗略代理）
+    // 典型城市气溶胶：1 km^-1 干消光 ≈ 20-30 µg/m³ PM2.5
+    // PM10 ≈ PM2.5 × 1.5（粗颗粒贡献）
+    std::vector<double> pm25;
+    std::vector<double> pm10;
+    pm25.reserve(dry_extinction.size());
+    pm10.reserve(dry_extinction.size());
+    for (double ext : dry_extinction) {
+        double est_pm25 = std::max(0.0, ext) * 25.0; // 经验转换系数
+        pm25.push_back(est_pm25);
+        pm10.push_back(est_pm25 * 1.5);
+    }
+
+    auto ended_at = std::chrono::steady_clock::now();
+
+    return ProcessedProfile{
+        profile,
+        preprocessed.l1_signal,
+        preprocessed.attenuated_backscatter,
+        preprocessed.snr,
+        inversion.first,           // extinction
+        dry_extinction,            // dry_extinction
+        std::move(pm25),           // pm25 — 经验估算
+        std::move(pm10),           // pm10 — 经验估算
+        profile_bins_to_enu(profile),
+        preprocessed.qc_flags,
+        std::chrono::duration<double, std::milli>(ended_at - started_at).count(),
+    };
+}
+
+std::vector<Hotspot> detect_hotspots_from_processed(
+    const std::vector<ProcessedProfile>& ppi_profiles,
+    const HotspotConfig& hotspot_cfg
+) {
+    // detect_hotspots 接受 ProcessedProfile* 指针列表
+    std::vector<ProcessedProfile*> ptrs;
+    ptrs.reserve(ppi_profiles.size());
+    for (const auto& p : ppi_profiles) {
+        ptrs.push_back(const_cast<ProcessedProfile*>(&p));
+    }
+
+    DetectionResult detection = detect_hotspots(
+        ptrs,
+        hotspot_cfg.pm25_threshold_ugm3,
+        hotspot_cfg.scan_relative_pm25_threshold_ugm3,
+        hotspot_cfg.scan_relative_dry_ext_threshold,
+        hotspot_cfg.min_cells
+    );
+    return detection.hotspots;
+}
+
+std::vector<GroundMeasurement> extract_ground_measurements(const Json& results) {
+    std::vector<GroundMeasurement> output;
+    if (results.contains("source") && results.at("source").contains("ground_measurements")) {
+        const auto& arr = results.at("source").at("ground_measurements");
+        if (arr.is_array()) {
+            for (const auto& item : arr.array_items()) {
+                GroundMeasurement gm;
+                gm.site_id = item.contains("site_id") ? item.at("site_id").string_value() : "";
+                gm.timestamp = item.contains("timestamp") ? item.at("timestamp").string_value() : "";
+                gm.pm25_ugm3 = item.contains("pm25_ugm3") ? item.at("pm25_ugm3").number_value() : 0.0;
+                gm.pm10_ugm3 = item.contains("pm10_ugm3") ? item.at("pm10_ugm3").number_value() : 0.0;
+                gm.relative_humidity = item.contains("relative_humidity") ? item.at("relative_humidity").number_value() : 0.0;
+                gm.temperature_c = item.contains("temperature_c") ? item.at("temperature_c").number_value() : 0.0;
+                gm.wind_speed_ms = item.contains("wind_speed_ms") ? item.at("wind_speed_ms").number_value() : 0.0;
+                gm.wind_dir_deg = item.contains("wind_dir_deg") ? item.at("wind_dir_deg").number_value() : 0.0;
+                output.push_back(std::move(gm));
+            }
+        }
+    }
+    return output;
+}
+
+Json to_json_processed(const ProcessedProfile& value) {
+    return to_json(value);
+}
+
+Json to_json_hotspot(const Hotspot& value) {
+    return to_json(value);
 }
 
 } // namespace lidar_demo

@@ -6,3 +6,8 @@ __pycache__/
 .venv/
 build/
 out/
+
+# coredump files (core-lidar_* or core.*)
+core-*
+core.*
+

@@ -48,6 +48,12 @@ target_link_libraries(lidar_fetch_public_ground_data PRIVATE lidar_demo)
 add_executable(lidar_fetch_cloudnet_public_sample cpp/apps/fetch_cloudnet_public_sample.cpp)
 target_link_libraries(lidar_fetch_cloudnet_public_sample PRIVATE lidar_demo)
 
+# ---- 三层架构：核心库 → 协议层 → 仿真服务器 / 主控客户端 ----
+add_subdirectory(cpp/core)
+add_subdirectory(cpp/protocol)
+add_subdirectory(cpp/server)
+add_subdirectory(cpp/client)
+
 # ---- 第 19 章教学算例 (cpp/examples/) ----
 # 这些算例是纯 C++ 项目, 只依赖 STL, 不依赖 lidar_demo 库或 NetCDF,
 # 这样学习者只看算法本身, 不被框架代码绕进去。
@@ -66,4 +72,13 @@ target_link_libraries(lidar_pipeline_test PRIVATE lidar_demo)
 add_test(
     NAME lidar_pipeline_test
     COMMAND lidar_pipeline_test ${CMAKE_CURRENT_SOURCE_DIR}/configs/default_pipeline.json
+)
+
+# 闭环管理组件测试
+add_executable(lidar_closed_loop_test cpp/tests/test_closed_loop.cpp)
+target_link_libraries(lidar_closed_loop_test PRIVATE lidar_client lidar_core)
+
+add_test(
+    NAME lidar_closed_loop_test
+    COMMAND lidar_closed_loop_test
 )

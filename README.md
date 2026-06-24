@@ -106,6 +106,92 @@ build\lidar_example_3d_rhi
 - PPI 二维热点质心方位角 = 40.4°, 仰角 = 10.0°
 - RHI 层底 = 26.4m, 层顶 = 51.1m, 厚度 = 24.7m
 
+## 三层实时监测架构 (`cpp/server/`, `cpp/client/`, `cpp/protocol/`)
+
+在原有批处理主链之上，仓库新增了一套三层实时监测架构，覆盖"仿真雷达 → 主控客户端 → UI 显示"的完整闭环。
+
+### 架构概览
+
+```
+┌──────────────────┐    TCP (JSON line)    ┌──────────────────────────────┐
+│  lidar_sim_server │ ────────────────────> │  lidar_control_client         │
+│  (仿真雷达服务端)  │  status / raw / hb   │  (主控客户端)                  │
+│                  │                       │  ┌────────────────────────┐  │
+│  · SimDevice     │                       │  │ FrameProcessor         │  │
+│  · TcpServer     │                       │  │ (预处理+反演+热点检测)  │  │
+│                  │                       │  ├────────────────────────┤  │
+└──────────────────┘                       │  │ HotspotTracker         │  │
+                                           │  │ (跨步骤事件追踪)       │  │
+                                           │  ├────────────────────────┤  │
+                                           │  │ DisposalLinkage        │  │
+                                           │  │ (处置设备联动)         │  │
+                                           │  ├────────────────────────┤  │
+                                           │  │ ReportGenerator        │  │
+                                           │  │ (报表生成)             │  │
+                                           │  └────────────────────────┘  │
+                                           └──────────────────────────────┘
+```
+
+### 模块说明
+
+| 目录 | 内容 |
+|---|---|
+| `cpp/core/` | `lidar_core` 桥接库（alias 到 `lidar_demo`），避免重复代码 |
+| `cpp/protocol/` | JSON line 协议：帧类型、序列化/反序列化、profile↔JSON 转换 |
+| `cpp/server/` | 仿真雷达服务端：`SimDevice` 模拟 PPI 扫描 + `TcpServer` 流式推送 |
+| `cpp/client/` | 主控客户端：帧处理、TCP 通信、闭环管理（告警/追踪/处置/报表） |
+| `cpp/client/ui/` | Qt6 GUI（可选，需 `-DLIDAR_ENABLE_QT=ON`） |
+
+### 快速运行（端到端）
+
+```bash
+# 构建
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+
+# 1. 启动仿真服务器（端口 19850，10 秒间隔）
+./build/cpp/server/lidar_sim_server 19850 10 &
+
+# 2. 启动主控客户端（自动处理所有步骤并生成报表）
+./build/cpp/client/lidar_control_client 127.0.0.1 19850 /tmp/output
+
+# 生成的文件：
+#   /tmp/output/final_report.json   — JSON 格式完整报表
+#   /tmp/output/final_report.txt    — 文本格式报表
+#   /tmp/output/step_*.json         — 每步处理结果
+```
+
+### 闭环管理组件
+
+| 组件 | 功能 |
+|---|---|
+| **AlarmStateMachine** | 告警状态机：candidate → confirmed → active → mitigating → resolved |
+| **HotspotTracker** | 跨步骤热点关联：贪心最近邻空间匹配（ENU 距离阈值） |
+| **DisposalLinkage** | 处置设备联动：自动注册设备、PM2.5 超阈值触发、事件解除时停机 |
+| **ReportGenerator** | 报表生成：步骤时间线、事件详情、处置摘要，支持 JSON + 文本 |
+
+### Qt6 GUI（可选）
+
+GUI 客户端在安装了 Qt6 的环境下可用：
+
+```bash
+# 安装 Qt6（Ubuntu/Debian）
+sudo apt install qt6-base-dev
+
+# 构建
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLIDAR_ENABLE_QT=ON
+cmake --build build -j$(nproc)
+
+# 运行 GUI
+./build/cpp/client/lidar_gui
+```
+
+GUI 功能：
+- PPI 热力图实时显示（jet 色表 + 距离环 + 热点标注）
+- 告警事件列表 + 状态变更历史详情
+- 处置设备状态联动显示
+- 一键生成并保存报表
+
 ## 补充文档
 
 - `docs/project_supplement.md` 六项补充内容的正式落地说明

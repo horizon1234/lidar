@@ -342,6 +342,65 @@ struct PipelineConfig {
 };
 
 // ============================================================================
+// 单步处理 API（供实时客户端逐帧处理使用）
+// ============================================================================
+
+/**
+ * @brief 对单条原始 LiDAR 廓线执行 L1 预处理 + Fernald 反演 + 湿度校正。
+ *
+ * 这是客户端实时处理的核心入口。给定一条 LidarProfile 和反演/湿度配置，
+ * 返回包含 L1 信号、衰减后向散射、SNR、消光、干消光的 ProcessedProfile。
+ * 注意：PM 浓度字段（pm25/pm10）在此步不填，需要地面标定后才有意义。
+ *
+ * @param profile     原始 LiDAR 廓线
+ * @param retrieval   反演配置（激光比、参考后向散射）
+ * @param humidity    湿度校正配置
+ * @return            预处理 + 反演后的 ProcessedProfile（pm25/pm10 为空）
+ */
+ProcessedProfile process_single_profile(
+    const LidarProfile& profile,
+    const RetrievalConfig& retrieval,
+    const HumidityConfig& humidity
+);
+
+/**
+ * @brief 对一组 PPI 处理后廓线执行热点检测。
+ *
+ * 对同一时间步的所有 PPI 廓线（通常 12 条，覆盖 0~360°）构建距离-方位网格，
+ * 做阈值 + 连通域分析，返回检测到的热点列表。
+ *
+ * @param ppi_profiles  同一时间步的所有 PPI ProcessedProfile
+ * @param hotspot_cfg   热点检测配置（阈值、最小连通域）
+ * @return              检测到的热点列表
+ */
+std::vector<Hotspot> detect_hotspots_from_processed(
+    const std::vector<ProcessedProfile>& ppi_profiles,
+    const HotspotConfig& hotspot_cfg
+);
+
+/**
+ * @brief 从 L2 demo 结果 JSON 中提取地面观测列表。
+ *
+ * @param results  run_end_to_end 返回的结果 Json
+ * @return         地面观测列表
+ */
+std::vector<GroundMeasurement> extract_ground_measurements(const Json& results);
+
+/**
+ * @brief 将一条 ProcessedProfile 序列化为 JSON。
+ * @param value 处理后的廓线
+ * @return      JSON 对象（L2 格式）
+ */
+Json to_json_processed(const ProcessedProfile& value);
+
+/**
+ * @brief 将一个 Hotspot 序列化为 JSON。
+ * @param value 热点
+ * @return      JSON 对象
+ */
+Json to_json_hotspot(const Hotspot& value);
+
+// ============================================================================
 // 顶层 API
 // ============================================================================
 
