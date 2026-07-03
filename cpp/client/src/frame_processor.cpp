@@ -5,7 +5,9 @@
 #include "lidar_client/frame_processor.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <iostream>
+#include <set>
 
 namespace lidar_client {
 
@@ -86,7 +88,8 @@ void FrameProcessor::finalize_step() {
     result.ground_measurements = std::move(current_ground_);
     result.raw_count = current_raw_count_;
 
-    // 对该时间步的 PPI 射线做热点检测
+    // 对该时间步的 PPI 射线做热点检测（detect_hotspots 内部按仰角分层，
+    // 多仰角体积扫描也能正确分组，不会跨层粘连）
     std::vector<lidar_core::ProcessedProfile> ppi_profiles;
     for (const auto& p : result.processed_profiles) {
         if (p.profile.scan_mode == "ppi") {
@@ -99,10 +102,17 @@ void FrameProcessor::finalize_step() {
             ppi_profiles, config_.hotspot);
     }
 
-    // 输出处理摘要
+    // 统计本步 PPI 的仰角层数（体积扫描时 >1）
+    std::set<int> elevation_keys;
+    for (const auto& p : ppi_profiles) {
+        elevation_keys.insert(static_cast<int>(std::round(p.profile.elevation_deg * 100.0)));
+    }
+
+    // 输出处理摘要（含射线数、PPI 射线数、仰角层数、热点数）
     std::cerr << "[processor] Step " << current_timestamp_
               << " complete: " << result.raw_count << " rays, "
-              << ppi_profiles.size() << " PPI, "
+              << ppi_profiles.size() << " PPI ("
+              << elevation_keys.size() << " elevations), "
               << result.hotspots.size() << " hotspots detected.\n";
 
     // 触发回调

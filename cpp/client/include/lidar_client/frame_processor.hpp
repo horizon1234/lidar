@@ -35,7 +35,9 @@ struct ProcessorConfig {
     lidar_core::RetrievalConfig retrieval;
     lidar_core::HumidityConfig humidity;
     lidar_core::HotspotConfig hotspot;
-    ///< 预期的 PPI 方位数（用于判断一个时间步是否完整），0 表示自动检测
+    ///< 预期的单层 PPI 方位数（仅作参考/校验，不用于完成判定）。
+    ///< 时间步完成由 heartbeat 帧触发，与仰角层数无关；多仰角体积扫描下
+    ///< PPI 总射线数 = expected_ppi_azimuths × 仰角层数。
     int expected_ppi_azimuths = 12;
 };
 
