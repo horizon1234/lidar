@@ -16,22 +16,43 @@
 
 C++ 代码位于 `cpp/`，构建入口位于仓库根目录的 `CMakeLists.txt`。
 
-如果本机有 CMake 和 C++20 编译器，可以使用下面的命令：
+### 方式一：Makefile（推荐）
 
-```powershell
-cmake -S . -B build
-cmake --build build --config Release
+项目根目录提供了 `Makefile`，封装了最常用的编译和运行命令，首次运行会自动执行 cmake 配置：
+
+```bash
+make            # 编译全部目标 → bin/
+make server     # 只编译仿真服务器     → bin/lidar_sim_server
+make client     # 只编译主控客户端     → bin/lidar_control_client
+make examples   # 编译教学算例         → bin/
+make test       # 编译并运行测试
+make run-server # 编译并启动服务器
+make run-client # 编译并启动客户端
+make clean      # 清理 build/
+make pristine   # 清理 build/ + bin/
+make list       # 列出所有可用目标
 ```
 
-常用入口：
+所有可执行文件统一输出到 `bin/` 目录。执行 `make list` 可查看全部目标。
 
-```powershell
-build/lidar_build_demo_assets --config configs/default_pipeline.json --output-root .
-build/lidar_run_batch --config configs/default_pipeline.json --output .
-build/lidar_api_server --config configs/default_pipeline.json --once
-build/lidar_api_server --config configs/default_pipeline.json --host 127.0.0.1 --port 8765
-build/lidar_fetch_public_ground_data --output-root .
-build/lidar_fetch_cloudnet_public_sample --config configs/cloudnet_hybrid_pipeline.json --output-root .
+### 方式二：直接 cmake
+
+如果本机有 CMake 和 C++20 编译器，也可以直接用 cmake：
+
+```bash
+cmake -S . -B build
+cmake --build build -j$(nproc)
+```
+
+常用入口（编译后位于 `bin/`）：
+
+```bash
+./bin/lidar_build_demo_assets --config configs/default_pipeline.json --output-root .
+./bin/lidar_run_batch --config configs/default_pipeline.json --output .
+./bin/lidar_api_server --config configs/default_pipeline.json --once
+./bin/lidar_api_server --config configs/default_pipeline.json --host 127.0.0.1 --port 8765
+./bin/lidar_fetch_public_ground_data --output-root .
+./bin/lidar_fetch_cloudnet_public_sample --config configs/cloudnet_hybrid_pipeline.json --output-root .
 ```
 
 说明：当前 C++ 端已覆盖默认 simulation 主链、批处理、静态 Demo、live HTTP API、Open-Meteo 公开样例抓取，以及基于 NetCDF 的 Cloudnet hybrid 本地读取路径。要跑 `configs/cloudnet_hybrid_pipeline.json`，需要在编译时链接 NetCDF；在 Windows C++ 构建下，可以先用 `lidar_fetch_cloudnet_public_sample` 抓取样例，也可以让 Cloudnet loader 在缺文件时自动下载并生成对齐后的 Open-Meteo 资产。Python 抓取脚本和 Python API 仍保留作参考实现。
@@ -62,8 +83,10 @@ python services/api/server.py --once
 - `configs/` 默认配置
 - `lidar_core/` Python 参考实现 (与 C++ 主链等价)
 - `services/` API 和批处理入口 (Python)
-- `scripts/` 复现实验和 Demo 资产脚本
+- `scripts/` 复现实验和 Demo 资产脚本 (Python)
 - `tests/` 单元测试
+- `bin/` 编译产物输出目录（.gitignore 已忽略）
+- `Makefile` 便捷编译入口（`make server` / `make client` / ...）
 
 ## 第 19 章教学算例 (`cpp/examples/`)
 
@@ -75,17 +98,16 @@ python services/api/server.py --once
 
 ### 一键运行 (4 个 stage 串联)
 
-```powershell
-cmake -S . -B build
-cmake --build build --config Release
+```bash
+make examples   # 编译教学算例 → bin/
 
 # 一键运行 4 个 stage (一维 + PPI + RHI + 完整 pipeline)
-build\lidar_run_full_demo
+./bin/lidar_run_full_demo
 
 # 或分别运行
-build\lidar_example_1d_ray
-build\lidar_example_2d_ppi
-build\lidar_example_3d_rhi
+./bin/lidar_example_1d_ray
+./bin/lidar_example_2d_ppi
+./bin/lidar_example_3d_rhi
 ```
 
 | 程序 | 对应章节 | 演示内容 |
@@ -145,21 +167,30 @@ build\lidar_example_3d_rhi
 ### 快速运行（端到端）
 
 ```bash
-# 构建
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
+# 构建（两种方式任选其一）
+make server client      # Makefile 方式，输出到 bin/
+# cmake --build build -j$(nproc)   # 或直接 cmake
 
-# 1. 启动仿真服务器（端口 19850，10 秒间隔）
-./build/cpp/server/lidar_sim_server 19850 10 &
+# 1. 启动仿真服务器（零参数，默认端口 19850，帧间 50ms，步间 500ms）
+./bin/lidar_sim_server &
 
-# 2. 启动主控客户端（自动处理所有步骤并生成报表）
-./build/cpp/client/lidar_control_client 127.0.0.1 19850 /tmp/output
+# 2. 启动主控客户端（零参数，自动连接 127.0.0.1:19850）
+./bin/lidar_control_client
 
-# 生成的文件：
-#   /tmp/output/final_report.json   — JSON 格式完整报表
-#   /tmp/output/final_report.txt    — 文本格式报表
-#   /tmp/output/step_*.json         — 每步处理结果
+# 生成的文件（默认输出到 data/client_output/）：
+#   data/client_output/final_report.json   — JSON 格式完整报表
+#   data/client_output/final_report.txt    — 文本格式报表
+#   data/client_output/step_*.json         — 每步处理结果
 ```
+
+两个程序的默认参数完全对齐，**不传任何参数即可运行**。
+
+可选参数：
+
+| 程序 | 参数 | 默认值 | 说明 |
+|------|------|--------|------|
+| `lidar_sim_server` | `[port] [step_delay_ms]` | `19850 500` | 监听端口、时间步间隔 |
+| `lidar_control_client` | `[host] [port] [output_dir]` | `127.0.0.1 19850 data/client_output` | 连接地址、端口、输出目录 |
 
 ### 闭环管理组件
 
@@ -183,7 +214,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLIDAR_ENABLE_QT=ON
 cmake --build build -j$(nproc)
 
 # 运行 GUI
-./build/cpp/client/lidar_gui
+./bin/lidar_gui
 ```
 
 GUI 功能：
