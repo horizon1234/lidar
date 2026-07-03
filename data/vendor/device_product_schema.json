@@ -1,0 +1,70 @@
+{
+  "device_telemetry_fields": [
+    "device_state",
+    "scan_scheduler_state",
+    "gps_lock",
+    "ntp_sync",
+    "clock_offset_ms",
+    "enclosure_temp_c",
+    "laser_head_temp_c",
+    "detector_temp_c",
+    "window_transmission",
+    "window_contamination_index",
+    "rain_sensor_wet",
+    "sun_background_counts",
+    "fan_state",
+    "door_state",
+    "wiper_state",
+    "diagnostic_flags"
+  ],
+  "l0_realtime_frame_fields": [
+    "type",
+    "timestamp",
+    "sequence_id",
+    "frame_id",
+    "scan_cycle_id",
+    "scan_mode",
+    "azimuth_deg",
+    "elevation_deg",
+    "ranges_m",
+    "raw_counts",
+    "laser_energy_mj",
+    "background_counts",
+    "overlap",
+    "channel_id",
+    "detector_mode",
+    "integration_pulses",
+    "accumulation_time_ms"
+  ],
+  "l3_volume_fields": [
+    "x_m",
+    "y_m",
+    "z_m",
+    "pm25",
+    "confidence",
+    "source_ray_count"
+  ],
+  "private_protocol_warning": "A 100% clone of a commercial device frame requires vendor SDK/protocol docs or captured sample frames.",
+  "profile_specific_mapping": {
+    "channels": [
+      "elastic_355nm",
+      "depolarization_355nm_optional"
+    ],
+    "note": "Public brochures expose hardware/product behavior, not private TCP frame layouts.",
+    "public_format_basis": "Raymetrics PMeye-like scanning aerosol LiDAR product",
+    "variables": [
+      "raw_signal_analog",
+      "raw_signal_photon_counting",
+      "overlap_corrected_signal",
+      "attenuated_backscatter",
+      "extinction",
+      "pm25",
+      "pm10",
+      "depolarization_ratio_optional",
+      "scan_azimuth",
+      "scan_elevation",
+      "source_location_3d"
+    ]
+  },
+  "vendor_profile": "raymetrics_pmeye_like"
+}

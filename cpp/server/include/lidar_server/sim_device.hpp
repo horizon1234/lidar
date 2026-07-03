@@ -13,8 +13,6 @@
 #include <vector>
 
 #include "lidar_core/lidar_core.hpp"
-
-#include "lidar_core/lidar_core.hpp"
 #include "lidar_protocol/frame.hpp"
 
 namespace lidar_server {
@@ -29,9 +27,12 @@ namespace lidar_server {
 struct SimDeviceConfig {
     // ---- 站点标识 ----
     std::string site_id = "sim-site-01";   ///< 站点唯一标识符，用于协议帧中的 site_id 字段
-    std::string site_name = "仿真站点";     ///< 站点可读名称，推送给客户端作为展示用
+    std::string site_name = "Field PM LiDAR Demo Site"; ///< 站点可读名称，推送给客户端作为展示用
     double latitude_deg = 39.9042;         ///< 站点纬度（°），北京天安门附近，用于地理坐标计算
     double longitude_deg = 116.4074;       ///< 站点经度（°），同上
+    std::string instrument_preset = "field_scanning_pm_lidar"; ///< 工地/城市污染扫描 LiDAR 预设
+    std::string application_mode = "construction_site";        ///< construction_site / urban_grid / mobile_mapping
+    std::string vendor_profile = "raymetrics_pmeye_like";      ///< 公开格式映射 profile
 
     // ---- 仿真可复现性 ----
     int seed = 7;                          ///< 随机数种子，相同种子产生完全相同的仿真数据（可复现性）
@@ -41,25 +42,28 @@ struct SimDeviceConfig {
     int minutes_per_step = 20;             ///< 相邻时间步之间的真实时间间隔（分钟），决定时间序列分辨率
 
     // ---- 距离分辨率（Range Bin）----
-    int range_bin_count = 60;              ///< 每条射线的距离 bin 数量，即一条射线被分成多少段
-    double range_bin_m = 100.0;            ///< 相邻距离 bin 的间距（米）；总探测距离 = count × m = 6000m
-    //   ↑ 探测距离 = range_bin_count × range_bin_m = 60 × 100 = 6.0 km（商用尺度）
+    int range_bin_count = 160;             ///< 每条射线的距离 bin 数量，即一条射线被分成多少段
+    double range_bin_m = 37.5;             ///< 相邻距离 bin 的间距（米）；总探测距离 = count × m = 6000m
+    //   ↑ 用 37.5 m 作为工程折中：比真实 3.75~15 m 粗，但适合实时 demo 和 3D 显示
 
     // ---- PPI 扫描几何 ----
     // PPI（Plan Position Indicator）= 雷达绕垂直轴旋转，在固定仰角下扫描一圈；
     // 多个仰角组合即体积扫描(volume scan)，可重建三维污染场。
-    // 默认 6 层 {5,15,30,45,60,75}°：接近商用气溶胶扫描雷达的常规体积扫描方案
-    // （如 Raymetrics 等），配套量程 6 km、边界层标高 1200 m、烟羽高度 280/380 m。
-    std::vector<double> ppi_elevations_deg = {5.0, 15.0, 30.0, 45.0, 60.0, 75.0}; ///< PPI 体积扫描的仰角序列（°）
-    double ppi_azimuth_step_deg = 30.0;    ///< PPI 扫描的方位角步进（°），每 30°一条射线 → 一圈 12 条
-    //   ↑ 每层方位射线数 = 360 / ppi_azimuth_step_deg = 360 / 30 = 12 条
+    // 默认 6 层 {3,6,10,15,25,40}°：覆盖近地扬尘、低空烟羽和边界层抬升结构。
+    std::vector<double> ppi_elevations_deg = {3.0, 6.0, 10.0, 15.0, 25.0, 40.0}; ///< PPI 体积扫描的仰角序列（°）
+    double ppi_azimuth_step_deg = 10.0;    ///< PPI 扫描的方位角步进（°），每 10°一条射线 → 一圈 36 条
 
     // ---- 正演物理常数 ----
     // 这些参数直接进入 LiDAR 正演方程：P(r) = C × β(r) / r² × T(r)²
-    double system_constant = 260000000.0;  ///< LiDAR 系统常数 C，综合发射能量、光学效率、接收口径等因素
+    double system_constant = 15000000.0;   ///< LiDAR 系统常数 C，综合发射能量、光学效率、接收口径等因素
     //   ↑ 决定回波信号的绝对量级；值越大，同一大气条件下接收到的信号越强
     double lidar_ratio_sr = 45.0;          ///< 气溶胶激光雷达比（单位 sr），即消光系数与后向散射系数之比
     //   ↑ 典型值 40~60 sr（城市污染气溶胶 ~45 sr）；用于反演时区分气溶胶与分子贡献
+    double wavelength_nm = 355.0;          ///< PM 扫描 LiDAR 常用 UV 弹性通道
+    double pulse_energy_mj = 8.0;          ///< 单脉冲能量均值（mJ）
+    double pulse_energy_jitter = 0.04;     ///< 脉冲能量相对抖动
+    double background_counts_mean = 120.0; ///< 白天户外背景计数均值
+    double full_overlap_m = 200.0;         ///< 完整 overlap 距离（m）
 
     // ---- 推送节奏 ----
     int inter_frame_delay_ms = 50;         ///< 每帧之间的发送间隔（毫秒），0 表示立即发送不延迟
@@ -117,6 +121,16 @@ public:
      */
     lidar_protocol::Frame ground_frame(int step_index) const;
 
+    /**
+     * @brief 获取设备能力与运行状态帧。
+     */
+    lidar_protocol::Frame status_frame(int step_index) const;
+
+    /**
+     * @brief 获取设备健康、天气和链路遥测帧。
+     */
+    lidar_protocol::Frame telemetry_frame(int step_index) const;
+
 private:
     SimDeviceConfig config_;
     lidar_core::SimulationConfig sim_config_;
@@ -126,6 +140,7 @@ private:
     std::vector<lidar_core::GroundMeasurement> ground_measurements_;
     ///< 所有时间戳列表
     std::vector<std::string> timestamps_;
+    int next_sequence_id_ = 1;
     bool initialized_ = false;
 };
 
