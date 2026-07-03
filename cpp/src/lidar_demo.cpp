@@ -1948,7 +1948,7 @@ double sample_gaussian(std::mt19937& rng, double mean_value, double sigma) {
  *
  * 物理含义：双轴 LiDAR 发射轴与接收视轴不完全重合，近距离处部分回波落在视场外，
  * overlap 在很近距离处接近常数下限（约 0.22）并随距离按幂函数趋近于 1。
- * 这里用 (r/180)^0.82 拟合典型几何并夹取 [0.22, 1.0]，避免近场民虚假高值。
+ * 这里用 (r/500)^0.82 拟合商用尺度双轴几何并夹取 [0.22, 1.0]，避免近场虚假高值。
  *
  * @param[in] ranges_m 各距离 bin 的斜距（米）。
  * @return 与 ranges_m 等长的 overlap 系数（无量纲 0~1）。
@@ -1957,8 +1957,8 @@ std::vector<double> build_overlap(const std::vector<double>& ranges_m) {
     std::vector<double> overlap;
     overlap.reserve(ranges_m.size());
     for (double distance_m : ranges_m) {
-        // 幂律拟合：r/180 的 0.82 次方，模拟典型双轴系统从近距离逐步进入全视场的过程
-        double ratio = std::pow(distance_m / 180.0, 0.82);
+        // 幂律拟合：r/500 的 0.82 次方，模拟商用尺度双轴系统从近距离逐步进入全视场的过程
+        double ratio = std::pow(distance_m / 500.0, 0.82);
         // 下限 0.22 防止除零导致近场发散，上限 1.0 表示远处完全进入视场
         overlap.push_back(clamp(ratio, 0.22, 1.0));
     }
@@ -1971,9 +1971,11 @@ std::vector<double> build_overlap(const std::vector<double>& ranges_m) {
  * 物理模型构成：
  * 1. 分子（Rayleigh）背景：消光系数 0.012·exp(-h/8000)（标准大气高度衰减，标高 8 km），
  *    后向散射取消光的 1/8；
- * 2. 边界层气溶胶：近地面增强项，含时间日变化（sin 相位，模拟昼夜 PBL 演化）；
- * 3. 高架抬升层（lofted）：高度约 500 m 处的高斯层，常对应区域输送；
- * 4. 两个烟羽（plume）：固定水平/方位角/高度上的三维高斯团，是测试热点检测的关键目标。
+ * 2. 边界层气溶胶：近地面增强项，标高 1200 m，含时间日变化（sin 相位，模拟昼夜 PBL 演化）；
+ * 3. 高架抬升层（lofted）：高度约 1000 m 处的高斯层，常对应区域输送；
+ * 4. 两个烟羽（plume）：固定水平/方位角/高度上的三维高斯团（约 850/1200 m 高，
+ *    高架工业排放+区域输送），是测试热点检测的关键目标。整体几何按商用扫描雷达
+ *    尺度标定（量程 6 km）。
  *
  * 湿度修正：相对湿度 > 0.55 时按比例放大消光（吸湿增长）。
  * PM 反推：由干气溶胶消光经线性经验关系换算到 PM2.5/PM10，反映典型质量消光效率。
@@ -2011,18 +2013,20 @@ SimulatedFields simulate_profile_fields(
         // 分子后向散射约为消光的 1/8（即标准分子激光比约 8 sr）
         double molecular_beta = molecular_ext / 8.0;
 
-        // 边界层气溶胶：含日变化振幅项，随高度按 550 m 标高衰减
-        double boundary_layer = (0.017 + 0.018 * (1.0 + std::sin(time_phase)) / 2.0) * std::exp(-altitude_m / 550.0);
-        // 高架抬升层：高度约 500 m 的高斯包络，常表示区域输送来的气溶胶层
-        double lofted_layer = 0.018 * gaussian(altitude_m, 500.0 + 120.0 * std::sin(time_phase), 160.0);
-        // 烟羽 1：近场（水平约 650 m、方位 80°、高度约 85 m）的局部强源
-        double plume_1 = 0.080 * gaussian(horizontal_m, 650.0 + 80.0 * std::cos(time_phase), 130.0)
+        // 边界层气溶胶：含日变化振幅项，随高度按 1200 m 标高衰减（商用尺度边界层）
+        double boundary_layer = (0.017 + 0.018 * (1.0 + std::sin(time_phase)) / 2.0) * std::exp(-altitude_m / 1200.0);
+        // 高架抬升层：高度约 1000 m 的高斯包络，常表示区域输送来的气溶胶层（商用尺度）
+        double lofted_layer = 0.018 * gaussian(altitude_m, 1000.0 + 200.0 * std::sin(time_phase), 280.0);
+        // 烟羽 1：高架工业排放源（水平约 2200 m、方位 80°、高度约 850 m），高烟囱+浮力抬升
+        // 该高度可被体积扫描的 15°~30° 仰角层有效探测（商用扫描雷达的典型探测目标）
+        double plume_1 = 0.080 * gaussian(horizontal_m, 2200.0 + 250.0 * std::cos(time_phase), 420.0)
             * gaussian(azimuth_delta(azimuth_deg, 80.0), 0.0, 18.0)
-            * gaussian(altitude_m, 85.0, 45.0);
-        // 烟羽 2：稍远抬升的扩散源（水平约 1050 m、方位 170°、高度约 120 m）
-        double plume_2 = 0.045 * gaussian(horizontal_m, 1050.0, 150.0)
+            * gaussian(altitude_m, 850.0, 200.0);
+        // 烟羽 2：远场区域输送抬升层（水平约 3500 m、方位 170°、高度约 1200 m）
+        // 该高度可被 15°~30° 仰角层探测，常对应远距离输送的残留层
+        double plume_2 = 0.045 * gaussian(horizontal_m, 3500.0, 480.0)
             * gaussian(azimuth_delta(azimuth_deg, 170.0), 0.0, 22.0)
-            * gaussian(altitude_m, 120.0, 65.0);
+            * gaussian(altitude_m, 1200.0, 280.0);
 
         // 干气溶胶消光（不含吸湿），随后再叠加湿度增长
         double aerosol_dry_ext = boundary_layer + lofted_layer + plume_1 + plume_2;
@@ -2198,72 +2202,83 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
             stare_fields.true_hotspot_mask,
         });
 
-        // -- PPI 扫描：方位角 0~360° 步进，用于热点检测 --
+        // -- PPI 体积扫描：顺序遍历多个仰角 × 方位角 0~360°，用于三维热点检测 --
+        // 真实扫描雷达体积扫描(volume scan) = 每个仰角各扫一圈方位角。
+        // scan_id 同时编码仰角与方位角，保证全空间唯一且文件系统排序稳定。
         std::vector<LidarProfile> ppi_profiles_for_timestamp;
-        for (double azimuth = 0.0; azimuth < 360.0 - 1e-9; azimuth += config.simulation.ppi_azimuth_step_deg) {
-            SimulatedFields ppi_fields = simulate_profile_fields(
-                ranges_m,
-                azimuth,
-                config.simulation.ppi_elevation_deg,
-                step_index,
-                config.simulation.time_steps,
-                relative_humidity,
-                config.simulation.lidar_ratio_sr
-            );
-            std::vector<double> ppi_raw_counts = simulate_raw_counts(
-                ppi_fields.true_backscatter,
-                ppi_fields.true_extinction,
-                overlap,
-                ranges_m,
-                laser_energy_mj,
-                background_counts,
-                config.simulation.system_constant,
-                rng
-            );
-            // scan_id 中按方位角填充前导 0，便于在文件系统排序按 000~355 对齐
-            LidarProfile profile{
-                data.site.site_id,
-                timestamp,
-                timestamp + "_ppi_" + (azimuth < 10.0 ? "00" : (azimuth < 100.0 ? "0" : "")) + std::to_string(static_cast<int>(azimuth)),
-                "ppi",
-                "synthetic_ppi",
-                azimuth,
-                config.simulation.ppi_elevation_deg,
-                ranges_m,
-                ppi_raw_counts,
-                laser_energy_mj,
-                background_counts,
-                overlap,
-                relative_humidity,
-                temperature_c,
-                wind_speed_ms,
-                wind_dir_deg,
-                ppi_fields.molecular_backscatter,
-                ppi_fields.molecular_extinction,
-                ppi_fields.true_backscatter,
-                ppi_fields.true_extinction,
-                ppi_fields.true_pm25,
-                ppi_fields.true_pm10,
-                ppi_fields.true_hotspot_mask,
-            };
-            data.profiles.push_back(profile);
-            ppi_profiles_for_timestamp.push_back(profile);
+        for (double elevation : config.simulation.effective_ppi_elevations_deg()) {
+            for (double azimuth = 0.0; azimuth < 360.0 - 1e-9; azimuth += config.simulation.ppi_azimuth_step_deg) {
+                SimulatedFields ppi_fields = simulate_profile_fields(
+                    ranges_m,
+                    azimuth,
+                    elevation,
+                    step_index,
+                    config.simulation.time_steps,
+                    relative_humidity,
+                    config.simulation.lidar_ratio_sr
+                );
+                std::vector<double> ppi_raw_counts = simulate_raw_counts(
+                    ppi_fields.true_backscatter,
+                    ppi_fields.true_extinction,
+                    overlap,
+                    ranges_m,
+                    laser_energy_mj,
+                    background_counts,
+                    config.simulation.system_constant,
+                    rng
+                );
+                // scan_id 形如 <ts>_ppi_e05_a080：前导 0 对齐，便于排序与分层解析
+                auto pad3 = [](double deg) {
+                    int v = static_cast<int>(std::round(deg));
+                    std::string s = std::to_string(v);
+                    while (s.size() < 3) s = "0" + s;
+                    return s;
+                };
+                std::string scan_id = timestamp + "_ppi_e" + pad3(elevation) + "_a" + pad3(azimuth);
+                LidarProfile profile{
+                    data.site.site_id,
+                    timestamp,
+                    scan_id,
+                    "ppi",
+                    "synthetic_ppi",
+                    azimuth,
+                    elevation,
+                    ranges_m,
+                    ppi_raw_counts,
+                    laser_energy_mj,
+                    background_counts,
+                    overlap,
+                    relative_humidity,
+                    temperature_c,
+                    wind_speed_ms,
+                    wind_dir_deg,
+                    ppi_fields.molecular_backscatter,
+                    ppi_fields.molecular_extinction,
+                    ppi_fields.true_backscatter,
+                    ppi_fields.true_extinction,
+                    ppi_fields.true_pm25,
+                    ppi_fields.true_pm10,
+                    ppi_fields.true_hotspot_mask,
+                };
+                data.profiles.push_back(profile);
+                ppi_profiles_for_timestamp.push_back(profile);
+            }
         }
 
         // -- 由真值消光反推地面观测的 PM（用于校准）--
         // 取 stare 前 6 个 bin 的真值干消光均值作为近地面代表（除以湿度增长还原为"干"值）
         std::vector<double> near_surface_values;
-        for (int index = 0; index < std::min<int>(6, static_cast<int>(stare_fields.true_extinction.size())); ++index) {
+        for (int index = 0; index < std::min<int>(4, static_cast<int>(stare_fields.true_extinction.size())); ++index) {
             double humid_factor = 1.0 + 0.35 * std::max(relative_humidity - 0.55, 0.0) * 3.0;
             // 除以吸湿因子：还原为"干"消光，避免双倍计入湿度
             near_surface_values.push_back(stare_fields.true_extinction[index] / humid_factor);
         }
         double near_surface_dry = mean(near_surface_values);
-        // 在所有 PPI 方位中找最近 6 bin 的干消光峰值，作为该时刻的污染热点代理
+        // 在所有 PPI 方位中找最近 4 bin（约 400 m 近地面层）的干消光峰值，作为该时刻的污染热点代理
         double hotspot_proxy = 0.0;
         for (const auto& profile : ppi_profiles_for_timestamp) {
             double local_peak = 0.0;
-            for (int index = 0; index < std::min<int>(6, static_cast<int>(profile.true_extinction.size())); ++index) {
+            for (int index = 0; index < std::min<int>(4, static_cast<int>(profile.true_extinction.size())); ++index) {
                 double humid_factor = 1.0 + 0.35 * std::max(relative_humidity - 0.55, 0.0) * 3.0;
                 local_peak = std::max(local_peak, profile.true_extinction[index] / humid_factor);
             }
@@ -2431,53 +2446,63 @@ CampaignData load_cloudnet_hybrid_campaign(const PipelineConfig& config) {
     std::mt19937 rng(config.simulation.seed + 101);
     for (std::size_t step_index = 0; step_index < data.ground_measurements.size(); ++step_index) {
         const GroundMeasurement& ground = data.ground_measurements[step_index];
-        for (double azimuth = 0.0; azimuth < 360.0 - 1e-9; azimuth += config.simulation.ppi_azimuth_step_deg) {
-            SimulatedFields fields = simulate_profile_fields(
-                ranges_m,
-                azimuth,
-                config.simulation.ppi_elevation_deg,
-                static_cast<int>(step_index),
-                static_cast<int>(data.ground_measurements.size()),
-                ground.relative_humidity,
-                config.simulation.lidar_ratio_sr
-            );
-            double background_counts = 10.2 + sample_gaussian(rng, 0.0, 0.35);
-            double laser_energy_mj = 1.0 + sample_gaussian(rng, 0.0, 0.02);
-            std::vector<double> raw_counts = simulate_raw_counts(
-                fields.true_backscatter,
-                fields.true_extinction,
-                overlap,
-                ranges_m,
-                laser_energy_mj,
-                background_counts,
-                config.simulation.system_constant,
-                rng
-            );
-            data.profiles.push_back(LidarProfile{
-                config.source.cloudnet.site_id,
-                ground.timestamp,
-                ground.timestamp + "_ppi_" + (azimuth < 10.0 ? "00" : (azimuth < 100.0 ? "0" : "")) + std::to_string(static_cast<int>(azimuth)),
-                "ppi",
-                "synthetic_ppi_hybrid",
-                azimuth,
-                config.simulation.ppi_elevation_deg,
-                ranges_m,
-                raw_counts,
-                laser_energy_mj,
-                background_counts,
-                overlap,
-                ground.relative_humidity,
-                ground.temperature_c,
-                ground.wind_speed_ms,
-                ground.wind_dir_deg,
-                fields.molecular_backscatter,
-                fields.molecular_extinction,
-                fields.true_backscatter,
-                fields.true_extinction,
-                fields.true_pm25,
-                fields.true_pm10,
-                fields.true_hotspot_mask,
-            });
+        // 多仰角体积扫描：每个仰角各扫一圈方位角
+        for (double elevation : config.simulation.effective_ppi_elevations_deg()) {
+            for (double azimuth = 0.0; azimuth < 360.0 - 1e-9; azimuth += config.simulation.ppi_azimuth_step_deg) {
+                SimulatedFields fields = simulate_profile_fields(
+                    ranges_m,
+                    azimuth,
+                    elevation,
+                    static_cast<int>(step_index),
+                    static_cast<int>(data.ground_measurements.size()),
+                    ground.relative_humidity,
+                    config.simulation.lidar_ratio_sr
+                );
+                double background_counts = 10.2 + sample_gaussian(rng, 0.0, 0.35);
+                double laser_energy_mj = 1.0 + sample_gaussian(rng, 0.0, 0.02);
+                std::vector<double> raw_counts = simulate_raw_counts(
+                    fields.true_backscatter,
+                    fields.true_extinction,
+                    overlap,
+                    ranges_m,
+                    laser_energy_mj,
+                    background_counts,
+                    config.simulation.system_constant,
+                    rng
+                );
+                auto pad3 = [](double deg) {
+                    int v = static_cast<int>(std::round(deg));
+                    std::string s = std::to_string(v);
+                    while (s.size() < 3) s = "0" + s;
+                    return s;
+                };
+                std::string scan_id = ground.timestamp + "_ppi_e" + pad3(elevation) + "_a" + pad3(azimuth);
+                data.profiles.push_back(LidarProfile{
+                    config.source.cloudnet.site_id,
+                    ground.timestamp,
+                    scan_id,
+                    "ppi",
+                    "synthetic_ppi_hybrid",
+                    azimuth,
+                    elevation,
+                    ranges_m,
+                    raw_counts,
+                    laser_energy_mj,
+                    background_counts,
+                    overlap,
+                    ground.relative_humidity,
+                    ground.temperature_c,
+                    ground.wind_speed_ms,
+                    ground.wind_dir_deg,
+                    fields.molecular_backscatter,
+                    fields.molecular_extinction,
+                    fields.true_backscatter,
+                    fields.true_extinction,
+                    fields.true_pm25,
+                    fields.true_pm10,
+                    fields.true_hotspot_mask,
+                });
+            }
         }
     }
 
@@ -2741,7 +2766,7 @@ std::vector<std::vector<double>> profile_bins_to_enu(const LidarProfile& profile
  *
  * @param[in] processed_profiles 已反演的所有处理廓线（含 stare 与 PPI）。
  * @param[in] ground_measurements 同步期地面观测序列。
- * @param[in] surface_bin_count 近地面 bin 数量（一般是 6 个，对应近 200 m）。
+ * @param[in] surface_bin_count 近地面 bin 数量（商用尺度下一般 4 个，对应约 400 m）。
  * @return 时间序列特征样本列表，每条对应一个时刻。
  */
 std::vector<FeatureSample> build_timestamp_feature_table(
@@ -3054,25 +3079,33 @@ void apply_pm_models(
     }
 }
 
+// 前向声明：单层检测实现见下方，多仰角分组器先调用它
+DetectionResult detect_hotspots_single_layer(
+    const std::vector<const ProcessedProfile*>& profiles,
+    double threshold_ugm3,
+    double relative_pm25_threshold,
+    double relative_dry_ext_threshold,
+    int min_cells,
+    double volume_baseline_pm25,
+    double volume_baseline_dry_ext);
+
 /**
- * @brief 在 PPI 扫描上检测污染热点（hotspot）。
+ * @brief 在 PPI 体积扫描（可含多个仰角层）上检测污染热点。
  *
- * 算法分两大阶段：
- *  1. **逐距离门预测掩码生成**：先用绝对阈值（PM2.5 ≥ threshold_ugm3）或相对阈值
- *     （PM2.5 与 dry_extinction 同时相对基线超出）判断每个网格是否为热点；
- *  2. **连通域分析（4-邻域 BFS）**：在 (方位角 × 距离) 网格上做连通域搜索，
- *     丢弃小于 min_cells 的孤立簇，对剩余簇按 PM2.5 加权求质心、面积与峰值，
- *     并根据峰值 PM2.5 给出 "medium/high/critical" 三档严重性。
+ * 多仰角体积扫描时，输入 profile 可能来自不同仰角层。若把所有层混在一起做
+ * 连通域分析，方位角步长会被错算、环形邻域会跨层粘连，产生错误的伪热点。
+ * 因此本函数按 elevation_deg 把 profile 分组，每层独立调用
+ * detect_hotspots_single_layer，再合并各层的热点（保留 ENU 三维质心，
+ * 上游可用质心 Up 分量区分层位）。预测/真值掩膜按各层顺序拼接。
  *
- * 方位角方向使用模 N 取邻居，因此支持 PPI 环形扫描的首尾相连。面积按径向距离
- * × 方位角步长 × 距离步长 投影到水平面近似（cos(elevation)）。
+ * 单层场景（所有 profile 同仰角）退化为直接调用一次单层检测，行为与旧版一致。
  *
- * @param profiles                       指向同一时间步 PPI 廓线的指针集合。
+ * @param profiles                       指向同一时间步 PPI 廓线的指针集合（可多仰角）。
  * @param threshold_ugm3                 绝对热点 PM2.5 阈值（µg/m³）。
  * @param relative_pm25_threshold        相对基线的 PM2.5 超出阈值。
  * @param relative_dry_ext_threshold     相对基线的干消光超出阈值（必须同时满足）。
  * @param min_cells                      一个有效热点簇所需的最小网格数。
- * @return DetectionResult               含预测/真值掩码及热点列表。
+ * @return DetectionResult               含预测/真值掩码（各层拼接）及热点列表。
  */
 DetectionResult detect_hotspots(
     const std::vector<ProcessedProfile*>& profiles,
@@ -3086,15 +3119,89 @@ DetectionResult detect_hotspots(
         return result;
     }
 
-    // 按方位角排序，确保 PPI 网格在方位方向上单调
-    std::vector<const ProcessedProfile*> sorted_profiles;
-    sorted_profiles.reserve(profiles.size());
+    // 按仰角分桶（用四舍五入到 0.01° 作为 key，避免浮点抖动导致同层被拆分）
+    std::map<int, std::vector<const ProcessedProfile*>> by_elevation_milli_deg;
     for (const auto* profile : profiles) {
-        sorted_profiles.push_back(profile);
+        int key = static_cast<int>(std::round(profile->profile.elevation_deg * 100.0));
+        by_elevation_milli_deg[key].push_back(profile);
     }
-    std::sort(sorted_profiles.begin(), sorted_profiles.end(), [](const ProcessedProfile* left, const ProcessedProfile* right) {
-        return left->profile.azimuth_deg < right->profile.azimuth_deg;
-    });
+
+    int global_component_index = 0;
+    for (auto& [elev_key, layer_profiles] : by_elevation_milli_deg) {
+        // 层内按方位角排序后做单层检测（各层用各自基线，单层场景行为不变）
+        std::sort(layer_profiles.begin(), layer_profiles.end(),
+                  [](const ProcessedProfile* left, const ProcessedProfile* right) {
+                      return left->profile.azimuth_deg < right->profile.azimuth_deg;
+                  });
+        DetectionResult layer_result = detect_hotspots_single_layer(
+            layer_profiles,
+            threshold_ugm3,
+            relative_pm25_threshold,
+            relative_dry_ext_threshold,
+            min_cells,
+            -1.0,
+            -1.0);
+
+        // 拼接掩膜
+        result.predicted_mask.insert(result.predicted_mask.end(),
+            layer_result.predicted_mask.begin(), layer_result.predicted_mask.end());
+        result.truth_mask.insert(result.truth_mask.end(),
+            layer_result.truth_mask.begin(), layer_result.truth_mask.end());
+
+        // 合并热点，并重新编号为全局连续 ID
+        for (auto& hotspot : layer_result.hotspots) {
+            ++global_component_index;
+            std::ostringstream hotspot_id;
+            hotspot_id << "hotspot-" << std::setw(3) << std::setfill('0') << global_component_index;
+            hotspot.hotspot_id = hotspot_id.str();
+            result.hotspots.push_back(std::move(hotspot));
+        }
+    }
+    return result;
+}
+
+/**
+ * @brief 在**单层** PPI 扫描上检测污染热点（hotspot）。
+ *
+ * 算法分两大阶段：
+ *  1. **逐距离门预测掩码生成**：先用绝对阈值（PM2.5 ≥ threshold_ugm3）或相对阈值
+ *     （PM2.5 与 dry_extinction 同时相对基线超出）判断每个网格是否为热点；
+ *  2. **连通域分析（4-邻域 BFS）**：在 (方位角 × 距离) 网格上做连通域搜索，
+ *     丢弃小于 min_cells 的孤立簇，对剩余簇按 PM2.5 加权求质心、面积与峰值，
+ *     并根据峰值 PM2.5 给出 "medium/high/critical" 三档严重性。
+ *
+ * 方位角方向使用模 N 取邻居，因此支持 PPI 环形扫描的首尾相连。面积按径向距离
+ * × 方位角步长 × 距离步长 投影到水平面近似（cos(elevation)）。
+ *
+ * @note 本函数假设输入 profile 全部位于**同一仰角层**；多仰角体积扫描请用
+ *       上层 detect_hotspots() 分层后分别调用本函数。
+ *
+ * @param profiles                       指向同一时间步、同一仰角层 PPI 廓线的指针集合。
+ * @param threshold_ugm3                 绝对热点 PM2.5 阈值（µg/m³）。
+ * @param relative_pm25_threshold        相对基线的 PM2.5 超出阈值。
+ * @param relative_dry_ext_threshold     相对基线的干消光超出阈值（必须同时满足）。
+ * @param min_cells                      一个有效热点簇所需的最小网格数。
+ * @param volume_baseline_pm25           整个体扫的 PM2.5 基线（中位数）；<0 时用本层自行计算。
+ *                                       多仰角场景下传入体扫基线可避免高空层因本底极低而误触发相对阈值。
+ * @param volume_baseline_dry_ext        整个体扫的干消光基线（中位数）；<0 时用本层自行计算。
+ * @return DetectionResult               含预测/真值掩码及热点列表。
+ */
+DetectionResult detect_hotspots_single_layer(
+    const std::vector<const ProcessedProfile*>& profiles,
+    double threshold_ugm3,
+    double relative_pm25_threshold,
+    double relative_dry_ext_threshold,
+    int min_cells,
+    double volume_baseline_pm25,
+    double volume_baseline_dry_ext
+) {
+    DetectionResult result;
+    if (profiles.empty()) {
+        return result;
+    }
+
+    // 按方位角排序，确保 PPI 网格在方位方向上单调
+    std::vector<const ProcessedProfile*> sorted_profiles = profiles;
 
     int range_count = static_cast<int>(sorted_profiles.front()->profile.ranges_m.size());
     int azimuth_count = static_cast<int>(sorted_profiles.size());
@@ -3102,17 +3209,41 @@ DetectionResult detect_hotspots(
     result.predicted_mask.assign(range_count * azimuth_count, 0);
     result.truth_mask.assign(range_count * azimuth_count, 0);
 
-    // 收集所有网格的 PM/消光样本，用于计算本次扫描的"基线"（中位数更鲁棒）
-    std::vector<double> all_pm25;
-    std::vector<double> all_dry_ext;
-    for (const auto* profile : sorted_profiles) {
-        all_pm25.insert(all_pm25.end(), profile->pm25.begin(), profile->pm25.end());
-        all_dry_ext.insert(all_dry_ext.end(), profile->dry_extinction.begin(), profile->dry_extinction.end());
+    // 基线：随距离变化的环境本底（per-range-bin 方位角中位数）。
+    // 物理动机：边界层气溶胶随高度指数衰减，固定仰角的 PPI 廓线天然具有
+    // "近场高、远场低"的距离衰减结构。若用整层单一中位数做基线，则近场所有
+    // 方位都会被误判为"相对基线偏高"（误报），而真正的烟羽是"在某一距离上
+    // 比该距离处的其它方位更亮"。因此对每个距离 bin 单独取所有方位的中位数
+    // 作为该距离的环境本底，仅方位向的局部增强（烟羽）才会超过基线。
+    // 体积级基线（volume_baseline_*）仅用于绝对值模式；相对阈值始终用 per-range 基线。
+    (void)volume_baseline_pm25;   // 体积级基线参数保留兼容，相对阈值改用 per-range 基线
+    (void)volume_baseline_dry_ext;
+    std::vector<double> baseline_pm25_by_range(range_count);
+    std::vector<double> baseline_atten_back_by_range(range_count);
+    for (int range_index = 0; range_index < range_count; ++range_index) {
+        std::vector<double> pm25_at_range;
+        std::vector<double> atten_at_range;
+        pm25_at_range.reserve(azimuth_count);
+        atten_at_range.reserve(azimuth_count);
+        for (const auto* profile : sorted_profiles) {
+            if (range_index < static_cast<int>(profile->pm25.size())) {
+                pm25_at_range.push_back(profile->pm25[range_index]);
+            }
+            if (range_index < static_cast<int>(profile->attenuated_backscatter.size())) {
+                atten_at_range.push_back(profile->attenuated_backscatter[range_index]);
+            }
+        }
+        baseline_pm25_by_range[range_index] = pm25_at_range.empty() ? 0.0 : median(pm25_at_range);
+        baseline_atten_back_by_range[range_index] = atten_at_range.empty() ? 0.0 : median(atten_at_range);
     }
-    double baseline_pm25 = median(all_pm25);
-    double baseline_dry_ext = median(all_dry_ext);
 
-    // 第一阶段：逐网格判定，得到预测掩码；同时记录真值掩码用于后续评估
+    // 第一阶段：逐网格判定，得到预测掩码；同时记录真值掩码用于后续评估。
+    // 相对判据使用【衰减后向散射】而非 Fernald 反演的干消光：
+    //   - 衰减后向散射是距离校正后的直接观测量，烟羽在其上有清晰的局部增强（典型 20~30%）；
+    //   - Fernald 反演在 6 km 长距离上因 exp(2τ) 反向递推不稳定，干消光几乎不携带烟羽对比度。
+    // 因此采用"该距离 bin 的方位角中位数"作为环境本底，要求该网格的衰减后向散射相对本底
+    // 超出 relative_dry_ext_threshold（此处语义为【相对超出的比例】，如 0.15 表示 +15%），
+    // 同时 PM2.5 相对本底超出 relative_pm25_threshold，二者同时满足才判为相对热点。
     for (int azimuth_index = 0; azimuth_index < azimuth_count; ++azimuth_index) {
         const auto* processed = sorted_profiles[azimuth_index];
         for (int range_index = 0; range_index < range_count; ++range_index) {
@@ -3120,8 +3251,12 @@ DetectionResult detect_hotspots(
             result.truth_mask[linear_index] = (range_index < static_cast<int>(processed->profile.true_hotspot_mask.size()))
                 ? processed->profile.true_hotspot_mask[range_index] : 0;
             bool absolute_hotspot = processed->pm25[range_index] >= threshold_ugm3;
-            bool relative_hotspot = (processed->pm25[range_index] - baseline_pm25 >= relative_pm25_threshold)
-                && (processed->dry_extinction[range_index] - baseline_dry_ext >= relative_dry_ext_threshold);
+            double base_atten = baseline_atten_back_by_range[range_index];
+            double atten_ratio = base_atten > 1e-9
+                ? (processed->attenuated_backscatter[range_index] - base_atten) / base_atten
+                : 0.0;
+            bool relative_hotspot = (processed->pm25[range_index] - baseline_pm25_by_range[range_index] >= relative_pm25_threshold)
+                && (atten_ratio >= relative_dry_ext_threshold);
             if (absolute_hotspot || relative_hotspot) {
                 result.predicted_mask[linear_index] = 1;
             }
@@ -3129,13 +3264,18 @@ DetectionResult detect_hotspots(
     }
 
     // 第二阶段：4-邻域连通域分析（BFS），方位角方向采用模 N 以支持环形 PPI
+    // 注意：评估指标（precision/recall/F1）基于 predicted_mask 计算。为保证 min_cells
+    // 过滤真正作用于评估结果，这里先保存第一阶段原始掩码，随后清空 predicted_mask，
+    // 仅在通过 min_cells 阈值的连通簇单元上重新置 1（丢弃过小的孤立噪声簇）。
+    std::vector<int> raw_mask = result.predicted_mask;
+    std::fill(result.predicted_mask.begin(), result.predicted_mask.end(), 0);
     std::vector<std::vector<bool>> visited(azimuth_count, std::vector<bool>(range_count, false));
     int component_index = 0;
     double azimuth_step_deg = 360.0 / std::max(azimuth_count, 1);  ///< 每条 PPI 廓线代表的方位角步长
     double range_step_m = range_count > 1 ? sorted_profiles.front()->profile.ranges_m[1] - sorted_profiles.front()->profile.ranges_m[0] : 50.0;
     for (int azimuth_index = 0; azimuth_index < azimuth_count; ++azimuth_index) {
         for (int range_index = 0; range_index < range_count; ++range_index) {
-            if (result.predicted_mask[azimuth_index * range_count + range_index] == 0 || visited[azimuth_index][range_index]) {
+            if (raw_mask[azimuth_index * range_count + range_index] == 0 || visited[azimuth_index][range_index]) {
                 continue;
             }
 
@@ -3159,7 +3299,7 @@ DetectionResult detect_hotspots(
                     if (next_range < 0 || next_range >= range_count || visited[next_azimuth][next_range]) {
                         continue;
                     }
-                    if (result.predicted_mask[next_azimuth * range_count + next_range] == 0) {
+                    if (raw_mask[next_azimuth * range_count + next_range] == 0) {
                         continue;
                     }
                     visited[next_azimuth][next_range] = true;
@@ -3167,9 +3307,14 @@ DetectionResult detect_hotspots(
                 }
             }
 
-            // 太小的簇视为噪声丢弃
+            // 太小的簇视为噪声丢弃（既不进入热点列表，也不写回 predicted_mask）
             if (static_cast<int>(component_cells.size()) < min_cells) {
                 continue;
+            }
+
+            // 该连通簇通过了 min_cells 过滤，将其单元写回 predicted_mask（用于指标评估）
+            for (const auto& [cell_azimuth, cell_range] : component_cells) {
+                result.predicted_mask[cell_azimuth * range_count + cell_range] = 1;
             }
 
             ++component_index;
@@ -4322,7 +4467,16 @@ PipelineConfig parse_pipeline_config(const Json& value) {
     config.simulation.minutes_per_step = simulation.at("minutes_per_step").int_value();
     config.simulation.range_bin_count = simulation.at("range_bin_count").int_value();
     config.simulation.range_bin_m = simulation.at("range_bin_m").number_value();
-    config.simulation.ppi_elevation_deg = simulation.at("ppi_elevation_deg").number_value();
+    // PPI 仰角：优先读取多仰角数组 ppi_elevations_deg；
+    // 旧配置仅含单值 ppi_elevation_deg 时，退化为单元素数组以保持向后兼容。
+    config.simulation.ppi_elevations_deg.clear();
+    if (simulation.contains("ppi_elevations_deg") && simulation.at("ppi_elevations_deg").is_array()) {
+        for (const auto& elv : simulation.at("ppi_elevations_deg").array_items()) {
+            config.simulation.ppi_elevations_deg.push_back(elv.number_value());
+        }
+    } else if (simulation.contains("ppi_elevation_deg")) {
+        config.simulation.ppi_elevations_deg.push_back(simulation.at("ppi_elevation_deg").number_value());
+    }
     config.simulation.ppi_azimuth_step_deg = simulation.at("ppi_azimuth_step_deg").number_value();
     config.simulation.system_constant = simulation.at("system_constant").number_value();
     config.simulation.lidar_ratio_sr = simulation.at("lidar_ratio_sr").number_value();
