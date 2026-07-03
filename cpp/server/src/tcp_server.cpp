@@ -90,8 +90,8 @@ void TcpServer::start(const std::function<void(const std::string&)>& handler) {
         throw std::runtime_error("Failed to listen on port " + std::to_string(port_));
     }
 
-    listen_socket_ = static_cast<int>(listen_fd);
-    running_ = true;
+    listen_socket_.store(static_cast<int>(listen_fd));
+    running_.store(true);
 
     std::cerr << "[tcp_server] Listening on port " << port_ << " ...\n";
 
@@ -129,29 +129,37 @@ void TcpServer::start(const std::function<void(const std::string&)>& handler) {
             }
         }
 
-        close_socket(client_socket_);
-        client_socket_ = -1;
+        // 原子地取出 fd 并置 -1，避免与 stop() 的并发 close 冲突
+        if (int fd = client_socket_.exchange(-1); fd >= 0) {
+            close_socket(fd);
+        }
         std::cerr << "[tcp_server] Client disconnected.\n";
     }
 
-    close_socket(listen_socket_);
-    listen_socket_ = -1;
+    if (int fd = listen_socket_.exchange(-1); fd >= 0) {
+        close_socket(fd);
+    }
 }
 
 void TcpServer::stop() {
-    running_ = false;
-    if (listen_socket_ >= 0) {
-        close_socket(listen_socket_);
-        listen_socket_ = -1;
+    running_.store(false);
+
+    // exchange 原子地取值并置 -1：即使与 start() 并发，也只有一个线程会 close
+    if (int fd = listen_socket_.exchange(-1); fd >= 0) {
+        close_socket(fd);
     }
-    if (client_socket_ >= 0) {
-        close_socket(client_socket_);
-        client_socket_ = -1;
+    if (int fd = client_socket_.exchange(-1); fd >= 0) {
+        close_socket(fd);
     }
 }
 
 bool TcpServer::send_line(const std::string& line) {
-    if (client_socket_ < 0) {
+    // 加锁串行化：主线程推送数据帧与 handler 回调推送 ACK 可能同时调用，
+    // 不加锁会导致两次 send() 的字节交错，客户端解析 JSON 行失败。
+    std::lock_guard<std::mutex> lk(send_mutex_);
+
+    int fd = client_socket_.load();
+    if (fd < 0) {
         return false;
     }
     std::string data = line + "\n";
@@ -159,7 +167,7 @@ bool TcpServer::send_line(const std::string& line) {
     int remaining = static_cast<int>(data.size());
     const char* ptr = data.c_str();
     while (remaining > 0) {
-        int sent = static_cast<int>(::send(client_socket_, ptr + total_sent, remaining, 0));
+        int sent = static_cast<int>(::send(fd, ptr + total_sent, remaining, 0));
         if (sent <= 0) {
             return false;
         }
@@ -170,11 +178,11 @@ bool TcpServer::send_line(const std::string& line) {
 }
 
 bool TcpServer::has_client() const {
-    return client_socket_ >= 0;
+    return client_socket_.load() >= 0;
 }
 
 bool TcpServer::is_listening() const {
-    return listen_socket_ >= 0;
+    return listen_socket_.load() >= 0;
 }
 
 } // namespace lidar_server

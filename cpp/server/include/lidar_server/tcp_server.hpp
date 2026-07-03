@@ -3,13 +3,18 @@
  * @brief 跨平台 TCP 服务器：接受连接、按行读取帧、发送帧。
  *
  * Windows 使用 Winsock2，POSIX 使用标准 socket API。
- * 设计为单线程阻塞模型（sim server 场景下客户端通常只有一个），
- * 可被 worker 线程包裹实现多客户端。
+ *
+ * 线程模型：start() 在 worker 线程中阻塞运行（accept + recv 循环），
+ * 主线程可并发调用 has_client() / is_listening() / send_line()。
+ * 内部共享状态使用 std::atomic 保证可见性，send_line() 使用 mutex
+ * 串行化并发发送，避免两条 JSON 行的字节交错。
  */
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -77,9 +82,10 @@ public:
 
 private:
     std::uint16_t port_;
-    int listen_socket_;  ///< POSIX: fd; Windows: SOCKET cast to int
-    int client_socket_;  ///< 当前活跃客户端
-    bool running_;
+    std::atomic<int> listen_socket_;  ///< POSIX: fd; Windows: SOCKET cast to int
+    std::atomic<int> client_socket_;  ///< 当前活跃客户端（原子：子线程写、主线程读）
+    std::atomic<bool> running_;       ///< 服务器运行标志
+    std::mutex send_mutex_;           ///< 串行化 send_line()，防止并发 send() 字节交错
 };
 
 } // namespace lidar_server

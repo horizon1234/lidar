@@ -119,14 +119,22 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        // 客户端已连接，开始推送数据
-        // 先发送状态帧
+        // ============================================================
+        // 客户端已连接，开始推送数据。共发送 4 种帧：
+        //   ① status      —— 站点元信息（每轮发一次，开头）
+        //   ② lidar_raw   —— 每条射线的原始光子计数（核心数据，来自 produce_scan_cycle）
+        //   ③ ground_obs  —— 地面观测 PM/气象量（每步 1 条，来自 produce_scan_cycle）
+        //   ④ heartbeat   —— 时间步进度心跳（每步末尾发 1 条）
+        // ============================================================
+
+        // ① 状态帧：站点元信息，客户端据此知道这是哪个站、总共会收到多少步数据
+        //    数据来源：SimDeviceConfig 里的 site_id / site_name / time_steps / minutes_per_step
         {
             lidar_core::Json status_payload = lidar_core::Json::object_type{
-                {"site_id", device.site_info().site_id},
-                {"site_name", device.site_info().name},
-                {"total_steps", device.total_steps()},
-                {"minutes_per_step", device.minutes_per_step()},
+                {"site_id", device.site_info().site_id},         // 站点 ID
+                {"site_name", device.site_info().name},          // 站点可读名称
+                {"total_steps", device.total_steps()},          // 总时间步数（18）
+                {"minutes_per_step", device.minutes_per_step()}, // 步间隔（20 分钟）
             };
             auto status_frame = lidar_protocol::make_frame(
                 lidar_protocol::FrameType::status,
@@ -136,7 +144,8 @@ int main(int argc, char* argv[]) {
             server.send_line(status_frame.to_json_line());
         }
 
-        // 逐时间步推送
+        // 逐时间步推送：每个时间步产出 74 条帧（73 lidar_raw + 1 ground_obs）
+        // ②③ 的数据都由 produce_scan_cycle() 从缓存中取出并封装为帧
         for (int step = 0; step < device.total_steps() && !g_should_stop; ++step) {
             // 客户端断开则跳出
             if (!server.has_client()) {
@@ -144,6 +153,12 @@ int main(int argc, char* argv[]) {
                 break;
             }
 
+            // produce_scan_cycle 返回该时间步的全部帧：
+            //   ② lidar_raw：1 条 stare（天顶凝视）+ 72 条 PPI（6 仰角 × 12 方位）= 73 条
+            //      每条帧包含 ranges_m[60]、raw_counts[60]、true_backscatter[60] 等数组
+            //      数据来源：构造时 lidar_core::run_end_to_end() 正向仿真生成并缓存
+            //   ③ ground_obs：1 条地面观测，含地面 PM2.5/PM10/T/RH/风速风向
+            //      数据来源：仿真地面模型生成，存于 ground_measurements_ 缓存
             auto frames = device.produce_scan_cycle(step);
             int frame_delay = device.inter_frame_delay_ms();
 
@@ -152,12 +167,14 @@ int main(int argc, char* argv[]) {
                     std::cerr << "[server] Send failed, client may have disconnected.\n";
                     break;
                 }
+                // 帧间延迟（默认 50ms），模拟真实雷达逐射线扫描节奏
                 if (frame_delay > 0) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(frame_delay));
                 }
             }
 
-            // 每个时间步后发送一个心跳帧
+            // ④ 心跳帧：报告当前播放进度，客户端据此显示进度条
+            //    只有 step/total 两个字段，体积很小
             if (server.has_client()) {
                 auto heartbeat = lidar_protocol::make_frame(
                     lidar_protocol::FrameType::heartbeat,
@@ -167,7 +184,7 @@ int main(int argc, char* argv[]) {
                 server.send_line(heartbeat.to_json_line());
             }
 
-            // 时间步间隔
+            // 时间步间隔（默认 500ms），区分不同时间步的节奏
             if (step_delay_ms > 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(step_delay_ms));
             }
