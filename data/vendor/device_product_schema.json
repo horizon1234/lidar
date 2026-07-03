@@ -46,25 +46,8 @@
   ],
   "private_protocol_warning": "A 100% clone of a commercial device frame requires vendor SDK/protocol docs or captured sample frames.",
   "profile_specific_mapping": {
-    "channels": [
-      "elastic_355nm",
-      "depolarization_355nm_optional"
-    ],
-    "note": "Public brochures expose hardware/product behavior, not private TCP frame layouts.",
-    "public_format_basis": "Raymetrics PMeye-like scanning aerosol LiDAR product",
-    "variables": [
-      "raw_signal_analog",
-      "raw_signal_photon_counting",
-      "overlap_corrected_signal",
-      "attenuated_backscatter",
-      "extinction",
-      "pm25",
-      "pm10",
-      "depolarization_ratio_optional",
-      "scan_azimuth",
-      "scan_elevation",
-      "source_location_3d"
-    ]
+    "note": "Use this when no vendor-specific public schema is selected.",
+    "public_format_basis": "Project generic JSON line protocol"
   },
-  "vendor_profile": "raymetrics_pmeye_like"
+  "vendor_profile": "generic_jsonl"
 }
