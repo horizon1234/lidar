@@ -260,17 +260,40 @@ struct Hotspot {
  *
  * 控制合成 LiDAR 场景生成的全部参数（时间步、距离分辨率、PPI 扫描几何、
  * 系统常数、激光雷达比等）。
+ *
+ * PPI 多仰角：真实扫描雷达一个体积扫描（volume scan）会顺序扫描多个仰角，
+ * 每个仰角各做一圈方位扫描，从而得到三维体数据。`ppi_elevations_deg`
+ * 为空时退化为旧行为（仅一个仰角），保证向后兼容。
  */
 struct SimulationConfig {
     int seed = 7;                          ///< 随机数种子（决定可复现性）
     int time_steps = 18;                   ///< 仿真的时间步数量
     int minutes_per_step = 20;            ///< 相邻时间步的间隔（分钟）
-    int range_bin_count = 30;             ///< 每条射线的距离 bin 数量
-    double range_bin_m = 50.0;            ///< 相邻距离 bin 的间距（m）
-    double ppi_elevation_deg = 8.0;       ///< PPI 扫描的仰角（°）
+    int range_bin_count = 60;             ///< 每条射线的距离 bin 数量
+    double range_bin_m = 100.0;           ///< 相邻距离 bin 的间距（m）
+    /// PPI 体积扫描的仰角序列（°，高于水平面）。
+    /// 默认 {5,15,30,45,60,75} 为接近商用气溶胶扫描雷达的 6 层体积扫描方案
+    /// （如 Raymetrics / 国产扫描激光雷达的常规配置）。配套参数已按商用尺度标定：
+    /// 量程 6 km（60 bin × 100 m）、边界层标高 1200 m、烟羽高度 280/380 m。
+    /// 高仰角 75° 在 6 km 处达 5.8 km，仍在对流层下部，信号有意义；
+    /// 烟羽 1（280 m/2200 m）所需仰角约 7°，由 15° 层捕捉；最低 5° 层覆盖近场低空源。
+    /// 为空时退化为单个低仰角（兼容旧配置）。
+    std::vector<double> ppi_elevations_deg = {5.0, 15.0, 30.0, 45.0, 60.0, 75.0};
     double ppi_azimuth_step_deg = 30.0;   ///< PPI 扫描的方位角步进（°）
     double system_constant = 260000000.0; ///< LiDAR 系统常数 C（正演发射方程用）
     double lidar_ratio_sr = 45.0;         ///< 气溶胶激光雷达比（sr，消光后向散射比）
+
+    /**
+     * @brief 取有效仰角列表（兼容旧配置）。
+     *
+     * 若 `ppi_elevations_deg` 为空，则返回单个低仰角占位值 {8.0}，
+     * 使得旧的单仰角配置仍能运行（只是不再多仰角扫描）。
+     */
+    std::vector<double> effective_ppi_elevations_deg() const {
+        return ppi_elevations_deg.empty()
+            ? std::vector<double>{8.0}
+            : ppi_elevations_deg;
+    }
 };
 
 /**
