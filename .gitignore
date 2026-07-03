@@ -8,6 +8,9 @@ build/
 out/
 bin/
 
+# 客户端运行时输出（每步处理结果、final_report 等）
+data/client_output/
+
 # coredump files (core-lidar_* or core.*)
 core-*
 core.*
