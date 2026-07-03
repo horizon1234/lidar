@@ -215,6 +215,19 @@ struct GroundMeasurement {
 };
 
 /**
+ * @brief L1 预处理中间结果。
+ *
+ * 对应商用 LiDAR 数据产品里的 background-corrected signal、range-corrected signal、
+ * SNR/CNR 和 QC flag。公开设备软件通常不会只输出最终 PM，而会保留这些中间量用于复核。
+ */
+struct PreprocessResult {
+    std::vector<double> l1_signal;              ///< 背景扣除后的 L1 信号
+    std::vector<double> attenuated_backscatter; ///< 能量/overlap/range 校正后的衰减后向散射代理量
+    std::vector<double> snr;                    ///< 距离门信噪比
+    std::vector<std::string> qc_flags;          ///< 质控标志
+};
+
+/**
  * @brief 一条 LiDAR 射线经过全流程处理后的结果
  *
  * 在原始 LidarProfile 基础上，叠加了 L1 信号、衰减后向散射、信噪比、
@@ -266,6 +279,9 @@ struct Hotspot {
  * 为空时退化为旧行为（仅一个仰角），保证向后兼容。
  */
 struct SimulationConfig {
+    std::string instrument_preset = "demo_lidar";              ///< 设备预设：demo_lidar / field_scanning_pm_lidar / ceilometer_profile / mobile_mapping_lidar
+    std::string application_mode = "legacy_demo";              ///< 应用场景：legacy_demo / construction_site / urban_grid / mobile_mapping
+    std::string vendor_profile = "generic_jsonl";              ///< 公开格式映射：generic_jsonl / vaisala_cl61_like / raymetrics_pmeye_like / halo_hpl_like
     int seed = 7;                          ///< 随机数种子（决定可复现性）
     int time_steps = 18;                   ///< 仿真的时间步数量
     int minutes_per_step = 20;            ///< 相邻时间步的间隔（分钟）
@@ -282,6 +298,19 @@ struct SimulationConfig {
     double ppi_azimuth_step_deg = 30.0;   ///< PPI 扫描的方位角步进（°）
     double system_constant = 260000000.0; ///< LiDAR 系统常数 C（正演发射方程用）
     double lidar_ratio_sr = 45.0;         ///< 气溶胶激光雷达比（sr，消光后向散射比）
+    double wavelength_nm = 532.0;         ///< 激光波长（nm），PM 扫描雷达常用 355nm，云高仪常用 905/910nm
+    double pulse_energy_mj = 1.0;         ///< 单脉冲能量均值（mJ），用于仿真每条射线的能量抖动
+    double pulse_energy_jitter = 0.03;    ///< 脉冲能量相对抖动（1 sigma）
+    double background_counts_mean = 10.5; ///< 背景/暗计数均值（计数）
+    double background_counts_jitter = 0.5;///< 背景计数随机扰动（1 sigma）
+    double full_overlap_m = 500.0;        ///< 进入完整 overlap 的距离（m）
+    double min_overlap = 0.22;            ///< 近场最小 overlap
+    double detector_dark_counts = 0.0;    ///< 探测器暗计数等效均值
+    double read_noise_counts = 0.0;       ///< 读出噪声（计数）
+    double adc_saturation_counts = 50000000.0; ///< 模拟/ADC 饱和上限
+    double dead_time_loss = 0.000000018;  ///< photon-counting 死时间损失近似系数
+    double solar_background_scale = 1.0;  ///< 太阳背景强度缩放，移动/白天工地可调高
+    double vehicle_speed_ms = 0.0;        ///< 走航模式下平台速度（m/s），固定站为 0
 
     /**
      * @brief 取有效仰角列表（兼容旧配置）。
@@ -344,6 +373,91 @@ struct HotspotConfig {
  */
 struct EvaluationConfig {
     std::vector<double> sensitivity_lidar_ratios; ///< 做灵敏度分析时要尝试的激光雷达比列表
+};
+
+/**
+ * @brief L0 -> L1 预处理步骤。
+ *
+ * 职责：背景扣除、激光能量归一、overlap 修正、range^2 修正、SNR 和 QC flag。
+ */
+class BackgroundPreprocessStep {
+public:
+    PreprocessResult process(const LidarProfile& profile) const;
+};
+
+/**
+ * @brief Fernald/Klett 弹性 LiDAR 反演步骤。
+ *
+ * 职责：由 attenuated backscatter 估计消光和气溶胶后向散射。
+ */
+class FernaldInversionStep {
+public:
+    explicit FernaldInversionStep(RetrievalConfig config);
+
+    std::pair<std::vector<double>, std::vector<double>> process(
+        const LidarProfile& profile,
+        const std::vector<double>& attenuated_backscatter) const;
+
+private:
+    RetrievalConfig config_;
+};
+
+/**
+ * @brief 湿度修正步骤。
+ *
+ * 职责：把湿消光换算到干参考状态，降低 RH 对 PM 估计的虚假放大。
+ */
+class HumidityCorrectionStep {
+public:
+    explicit HumidityCorrectionStep(HumidityConfig config);
+
+    std::vector<double> process(
+        const std::vector<double>& extinction,
+        double relative_humidity) const;
+
+private:
+    HumidityConfig config_;
+};
+
+/**
+ * @brief 极坐标到 ENU 坐标投影步骤。
+ */
+class CoordinateProjectionStep {
+public:
+    std::vector<std::vector<double>> process(const LidarProfile& profile) const;
+};
+
+/**
+ * @brief PPI/体扫热点检测步骤。
+ *
+ * 职责：按 timestamp 内的扫描射线构建距离-方位网格，执行阈值、相对异常和连通域分析。
+ */
+class HotspotDetectionStep {
+public:
+    explicit HotspotDetectionStep(HotspotConfig config);
+
+    std::vector<Hotspot> process(const std::vector<ProcessedProfile>& ppi_profiles) const;
+
+private:
+    HotspotConfig config_;
+};
+
+/**
+ * @brief 单条 profile 的类化处理链。
+ *
+ * 这个类把商用设备软件常见的 L0 -> L1 -> L2 几个阶段拆开，便于调试、面试讲解和后续替换算法。
+ */
+class SingleProfileProcessingChain {
+public:
+    SingleProfileProcessingChain(RetrievalConfig retrieval, HumidityConfig humidity);
+
+    ProcessedProfile process(const LidarProfile& profile, bool disable_humidity = false) const;
+
+private:
+    BackgroundPreprocessStep preprocess_;
+    FernaldInversionStep inversion_;
+    HumidityCorrectionStep humidity_;
+    CoordinateProjectionStep projection_;
 };
 
 /**

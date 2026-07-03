@@ -1818,17 +1818,6 @@ struct SimulatedFields {
 };
 
 /**
- * @brief 预处理（L1）结果中间结构。
- * 包含去背景的 L1 信号、范围平方校正后的衰减后向散射、信噪比和质控标志列表。
- */
-struct PreprocessResult {
-    std::vector<double> l1_signal;
-    std::vector<double> attenuated_backscatter;
-    std::vector<double> snr;
-    std::vector<std::string> qc_flags;
-};
-
-/**
  * @brief PM 校准单条样本：包含特征向量与对应地面真值。
  *
  * features 字段顺序为 [1.0, 近地面干消光均值, 相对湿度, 热点代理量]，对应线性回归的截距与系数。
@@ -1953,14 +1942,16 @@ double sample_gaussian(std::mt19937& rng, double mean_value, double sigma) {
  * @param[in] ranges_m 各距离 bin 的斜距（米）。
  * @return 与 ranges_m 等长的 overlap 系数（无量纲 0~1）。
  */
-std::vector<double> build_overlap(const std::vector<double>& ranges_m) {
+std::vector<double> build_overlap(const std::vector<double>& ranges_m, double full_overlap_m, double min_overlap) {
     std::vector<double> overlap;
     overlap.reserve(ranges_m.size());
+    double full_overlap = std::max(full_overlap_m, 25.0);
+    double lower = clamp(min_overlap, 0.02, 0.5);
     for (double distance_m : ranges_m) {
         // 幂律拟合：r/500 的 0.82 次方，模拟商用尺度双轴系统从近距离逐步进入全视场的过程
-        double ratio = std::pow(distance_m / 500.0, 0.82);
+        double ratio = std::pow(distance_m / full_overlap, 0.82);
         // 下限 0.22 防止除零导致近场发散，上限 1.0 表示远处完全进入视场
-        overlap.push_back(clamp(ratio, 0.22, 1.0));
+        overlap.push_back(clamp(ratio, lower, 1.0));
     }
     return overlap;
 }
@@ -1996,7 +1987,10 @@ SimulatedFields simulate_profile_fields(
     int step_index,
     int total_steps,
     double relative_humidity,
-    double lidar_ratio_sr
+    double lidar_ratio_sr,
+    double wind_speed_ms,
+    double wind_dir_deg,
+    const SimulationConfig& simulation
 ) {
     SimulatedFields output;
     // 日变化相位 2π·step/total：让边界层高度与气溶胶浓度随昼夜循环变化
@@ -2013,23 +2007,61 @@ SimulatedFields simulate_profile_fields(
         // 分子后向散射约为消光的 1/8（即标准分子激光比约 8 sr）
         double molecular_beta = molecular_ext / 8.0;
 
-        // 边界层气溶胶：含日变化振幅项，随高度按 1200 m 标高衰减（商用尺度边界层）
-        double boundary_layer = (0.017 + 0.018 * (1.0 + std::sin(time_phase)) / 2.0) * std::exp(-altitude_m / 1200.0);
-        // 高架抬升层：高度约 1000 m 的高斯包络，常表示区域输送来的气溶胶层（商用尺度）
-        double lofted_layer = 0.018 * gaussian(altitude_m, 1000.0 + 200.0 * std::sin(time_phase), 280.0);
-        // 烟羽 1：高架工业排放源（水平约 2200 m、方位 80°、高度约 850 m），高烟囱+浮力抬升
-        // 该高度可被体积扫描的 15°~30° 仰角层有效探测（商用扫描雷达的典型探测目标）
-        double plume_1 = 0.080 * gaussian(horizontal_m, 2200.0 + 250.0 * std::cos(time_phase), 420.0)
-            * gaussian(azimuth_delta(azimuth_deg, 80.0), 0.0, 18.0)
-            * gaussian(altitude_m, 850.0, 200.0);
-        // 烟羽 2：远场区域输送抬升层（水平约 3500 m、方位 170°、高度约 1200 m）
-        // 该高度可被 15°~30° 仰角层探测，常对应远距离输送的残留层
-        double plume_2 = 0.045 * gaussian(horizontal_m, 3500.0, 480.0)
-            * gaussian(azimuth_delta(azimuth_deg, 170.0), 0.0, 22.0)
-            * gaussian(altitude_m, 1200.0, 280.0);
+        double legacy_plume = simulation.application_mode == "legacy_demo";
+        double mobile_offset_m = simulation.application_mode == "mobile_mapping"
+            ? simulation.vehicle_speed_ms * 60.0 * static_cast<double>(step_index)
+            : 0.0;
+        double wind_rad = wind_dir_deg * std::numbers::pi / 180.0;
+        double elapsed_s = static_cast<double>(step_index * std::max(simulation.minutes_per_step, 1) * 60);
+        double advect_x_m = wind_speed_ms * elapsed_s * std::sin(wind_rad);
+        double advect_y_m = wind_speed_ms * elapsed_s * std::cos(wind_rad);
+        double ray_x_m = horizontal_m * std::sin(azimuth_deg * std::numbers::pi / 180.0) - mobile_offset_m;
+        double ray_y_m = horizontal_m * std::cos(azimuth_deg * std::numbers::pi / 180.0);
+
+        double boundary_layer = 0.0;
+        double lofted_layer = 0.0;
+        double plume_1 = 0.0;
+        double plume_2 = 0.0;
+        if (legacy_plume) {
+            boundary_layer = (0.017 + 0.018 * (1.0 + std::sin(time_phase)) / 2.0) * std::exp(-altitude_m / 1200.0);
+            lofted_layer = 0.018 * gaussian(altitude_m, 1000.0 + 200.0 * std::sin(time_phase), 280.0);
+            plume_1 = 0.080 * gaussian(horizontal_m, 2200.0 + 250.0 * std::cos(time_phase), 420.0)
+                * gaussian(azimuth_delta(azimuth_deg, 80.0), 0.0, 18.0)
+                * gaussian(altitude_m, 850.0, 200.0);
+            plume_2 = 0.045 * gaussian(horizontal_m, 3500.0, 480.0)
+                * gaussian(azimuth_delta(azimuth_deg, 170.0), 0.0, 22.0)
+                * gaussian(altitude_m, 1200.0, 280.0);
+        } else {
+            // 边界层气溶胶：含日变化振幅项，随高度按 1200 m 标高衰减（商用尺度边界层）
+            double traffic_factor = simulation.application_mode == "urban_grid" ? 1.25 : 1.0;
+            double construction_factor = simulation.application_mode == "construction_site" ? 1.35 : 1.0;
+            boundary_layer = traffic_factor * (0.014 + 0.015 * (1.0 + std::sin(time_phase)) / 2.0) * std::exp(-altitude_m / 1200.0);
+            // 高架抬升层：高度约 1000 m 的高斯包络，常表示区域输送来的气溶胶层（商用尺度）
+            lofted_layer = 0.018 * gaussian(altitude_m, 1000.0 + 200.0 * std::sin(time_phase), 280.0);
+            // 烟羽 1：工地/工业源。源位随风平流，扩散宽度随时间增长，避免固定高斯团过于理想。
+            double source1_x = 1450.0 + 0.65 * advect_x_m;
+            double source1_y = 900.0 + 0.65 * advect_y_m;
+            double source1_range_sigma = 300.0 + 18.0 * std::sqrt(std::max(elapsed_s / 60.0, 0.0));
+            double source1_dist = std::hypot(ray_x_m - source1_x, ray_y_m - source1_y);
+            double emission_pulse = 0.65 + 0.55 * gaussian(std::sin(time_phase + 0.7), 0.8, 0.45);
+            plume_1 = construction_factor * 0.072 * emission_pulse
+                * gaussian(source1_dist, 0.0, source1_range_sigma)
+                * gaussian(altitude_m, 180.0 + 80.0 * wind_speed_ms, 140.0);
+            // 烟羽 2：城市交通/区域输送抬升层，偏远、较宽、强度较稳定。
+            double source2_x = -900.0 + 0.45 * advect_x_m;
+            double source2_y = 3150.0 + 0.45 * advect_y_m;
+            double source2_dist = std::hypot(ray_x_m - source2_x, ray_y_m - source2_y);
+            plume_2 = 0.042 * traffic_factor
+                * gaussian(source2_dist, 0.0, 760.0)
+                * gaussian(altitude_m, 650.0 + 180.0 * std::sin(time_phase), 260.0);
+        }
+        // 走航车辆近源扬尘，低空、近距离、随车坐标移动。
+        double mobile_plume = simulation.application_mode == "mobile_mapping"
+            ? 0.025 * gaussian(ray_x_m, 350.0, 280.0) * gaussian(ray_y_m, 0.0, 260.0) * gaussian(altitude_m, 70.0, 90.0)
+            : 0.0;
 
         // 干气溶胶消光（不含吸湿），随后再叠加湿度增长
-        double aerosol_dry_ext = boundary_layer + lofted_layer + plume_1 + plume_2;
+        double aerosol_dry_ext = boundary_layer + lofted_layer + plume_1 + plume_2 + mobile_plume;
         // 实际（湿）气溶胶消光：以 humidity_growth 放大
         double aerosol_ext = aerosol_dry_ext * humidity_growth;
         // 后向散射：按给定激光比由消光换算（β = σ / S）
@@ -2041,11 +2073,11 @@ SimulatedFields simulate_profile_fields(
         output.true_extinction.push_back(molecular_ext + aerosol_ext);
         // 干气溶胶消光到 PM2.5 的经验线性关系：系数 640 为典型质量消光效率倒数（约 1/0.00156 m²/g）
         // plume_1 单独加权表示局部源对细颗粒的额外贡献，常数 15 为再悬浮/本底
-        output.true_pm25.push_back(640.0 * aerosol_dry_ext + 210.0 * plume_1 + 15.0);
+        output.true_pm25.push_back(640.0 * aerosol_dry_ext + 210.0 * (plume_1 + mobile_plume) + 15.0);
         // PM10 略高于 PM2.5，额外含两个烟羽（粗粒贡献）和本底 22
-        output.true_pm10.push_back(920.0 * aerosol_dry_ext + 260.0 * (plume_1 + plume_2) + 22.0);
+        output.true_pm10.push_back(920.0 * aerosol_dry_ext + 260.0 * (plume_1 + plume_2 + 1.6 * mobile_plume) + 22.0);
         // 热点掩膜阈值：烟羽总贡献 > 0.025 标记为热点
-        output.true_hotspot_mask.push_back((plume_1 + plume_2 > 0.025) ? 1 : 0);
+        output.true_hotspot_mask.push_back((plume_1 + plume_2 + mobile_plume > 0.025) ? 1 : 0);
     }
     return output;
 }
@@ -2077,7 +2109,7 @@ std::vector<double> simulate_raw_counts(
     const std::vector<double>& ranges_m,
     double laser_energy_mj,
     double background_counts,
-    double system_constant,
+    const SimulationConfig& simulation,
     std::mt19937& rng
 ) {
     std::vector<double> raw_counts;
@@ -2090,13 +2122,26 @@ std::vector<double> simulate_raw_counts(
         optical_depth += true_extinction[index] * step_km;
         double range_km = ranges_m[index] / 1000.0;
         // 离散化 LiDAR 方程：C·E·O·β·exp(-2τ)/r²
-        double signal = system_constant * laser_energy_mj * overlap[index] * true_backscatter[index]
+        double signal = simulation.system_constant * laser_energy_mj * overlap[index] * true_backscatter[index]
             * std::exp(-2.0 * optical_depth) / std::max(range_km * range_km, 1e-6);
-        // 噪声模型：取 max(背景 7%, 信号 5%) 作为高斯标准差，反映散粒噪声与背景暗计数主导两种工况
-        double noise_sigma = std::max(background_counts * 0.07, signal * 0.05);
-        // 信号 + 背景 + 噪声，下界为背景 + 0.1 防止负计数
-        double noisy_signal = std::max(signal + background_counts + sample_gaussian(rng, 0.0, noise_sigma), background_counts + 0.1);
-        raw_counts.push_back(noisy_signal);
+        // 白天户外太阳背景会随仰角/距离弱变化，这里把它并入距离相关背景项。
+        double range_background = background_counts + simulation.detector_dark_counts
+            + simulation.solar_background_scale * 0.018 * background_counts * range_km;
+        double expected_counts = std::max(signal + range_background, 0.0);
+
+        double sampled = 0.0;
+        if (expected_counts < 900000.0) {
+            std::poisson_distribution<int> poisson(expected_counts);
+            sampled = static_cast<double>(poisson(rng));
+        } else {
+            sampled = expected_counts + sample_gaussian(rng, 0.0, std::sqrt(expected_counts));
+        }
+        sampled += sample_gaussian(rng, 0.0, simulation.read_noise_counts);
+
+        // photon-counting 死时间和模拟链路饱和：近距离强回波不会无限增大。
+        double dead_time_corrected = sampled / (1.0 + simulation.dead_time_loss * std::max(sampled, 0.0));
+        double saturated = std::min(dead_time_corrected, simulation.adc_saturation_counts);
+        raw_counts.push_back(std::max(saturated, range_background + 0.1));
     }
     return raw_counts;
 }
@@ -2145,7 +2190,7 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
     for (int index = 0; index < config.simulation.range_bin_count; ++index) {
         ranges_m.push_back(config.simulation.range_bin_m * static_cast<double>(index + 1));
     }
-    std::vector<double> overlap = build_overlap(ranges_m);
+    std::vector<double> overlap = build_overlap(ranges_m, config.simulation.full_overlap_m, config.simulation.min_overlap);
 
     for (int step_index = 0; step_index < config.simulation.time_steps; ++step_index) {
         std::string timestamp = format_timestamp(base_time + static_cast<long long>(step_index * config.simulation.minutes_per_step * 60));
@@ -2160,11 +2205,33 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
         // 风向：以 120° 为基线做日摆动，加 360° 取模防止负值
         double wind_dir_deg = std::fmod(120.0 + 45.0 * std::sin(time_phase) + sample_gaussian(rng, 0.0, 4.0) + 360.0, 360.0);
         // 背景计数与激光能量：基线 + 小幅随机抖动，反映仪器状态
-        double background_counts = 10.5 + sample_gaussian(rng, 0.0, 0.5);
-        double laser_energy_mj = 1.0 + sample_gaussian(rng, 0.0, 0.03);
+        double solar_cycle = 0.65 + 0.35 * (1.0 + std::sin(time_phase - 0.4)) / 2.0;
+        double background_counts = 0.0;
+        double laser_energy_mj = 0.0;
+        if (config.simulation.application_mode == "legacy_demo") {
+            background_counts = 10.5 + sample_gaussian(rng, 0.0, 0.5);
+            laser_energy_mj = 1.0 + sample_gaussian(rng, 0.0, 0.03);
+        } else {
+            background_counts = std::max(2.0,
+                config.simulation.background_counts_mean * solar_cycle
+                + sample_gaussian(rng, 0.0, config.simulation.background_counts_jitter));
+            laser_energy_mj = std::max(0.05,
+                config.simulation.pulse_energy_mj
+                * (1.0 + sample_gaussian(rng, 0.0, config.simulation.pulse_energy_jitter)));
+        }
 
         // -- zenith stare 廓线：用于 PM 反演真值锚定 --
-        SimulatedFields stare_fields = simulate_profile_fields(ranges_m, 0.0, 90.0, step_index, config.simulation.time_steps, relative_humidity, config.simulation.lidar_ratio_sr);
+        SimulatedFields stare_fields = simulate_profile_fields(
+            ranges_m,
+            0.0,
+            90.0,
+            step_index,
+            config.simulation.time_steps,
+            relative_humidity,
+            config.simulation.lidar_ratio_sr,
+            wind_speed_ms,
+            wind_dir_deg,
+            config.simulation);
         std::vector<double> stare_raw_counts = simulate_raw_counts(
             stare_fields.true_backscatter,
             stare_fields.true_extinction,
@@ -2172,7 +2239,7 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
             ranges_m,
             laser_energy_mj,
             background_counts,
-            config.simulation.system_constant,
+            config.simulation,
             rng
         );
 
@@ -2215,7 +2282,10 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
                     step_index,
                     config.simulation.time_steps,
                     relative_humidity,
-                    config.simulation.lidar_ratio_sr
+                    config.simulation.lidar_ratio_sr,
+                    wind_speed_ms,
+                    wind_dir_deg,
+                    config.simulation
                 );
                 std::vector<double> ppi_raw_counts = simulate_raw_counts(
                     ppi_fields.true_backscatter,
@@ -2224,7 +2294,7 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
                     ranges_m,
                     laser_energy_mj,
                     background_counts,
-                    config.simulation.system_constant,
+                    config.simulation,
                     rng
                 );
                 // scan_id 形如 <ts>_ppi_e05_a080：前导 0 对齐，便于排序与分层解析
@@ -2310,6 +2380,12 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
         {"mode", "simulation"},
         {"site_id", data.site.site_id},
         {"site_name", data.site.name},
+        {"instrument_preset", config.simulation.instrument_preset},
+        {"application_mode", config.simulation.application_mode},
+        {"vendor_profile", config.simulation.vendor_profile},
+        {"wavelength_nm", config.simulation.wavelength_nm},
+        {"range_bin_m", config.simulation.range_bin_m},
+        {"full_overlap_m", config.simulation.full_overlap_m},
         {"real_stare_profile_count", 0},
         {"synthetic_ppi_profile_count", ppi_count},
     };
@@ -2366,7 +2442,7 @@ CampaignData load_cloudnet_hybrid_campaign(const PipelineConfig& config) {
     for (int index : range_indices) {
         ranges_m.push_back(range_values_m[static_cast<std::size_t>(index)]);
     }
-    std::vector<double> overlap = build_overlap(ranges_m);
+    std::vector<double> overlap = build_overlap(ranges_m, config.simulation.full_overlap_m, config.simulation.min_overlap);
     auto [molecular_extinction, molecular_backscatter] = standard_molecular_fields(ranges_m, data.site.altitude_m, elevation_deg);
 
     for (int time_index : time_indices) {
@@ -2456,10 +2532,17 @@ CampaignData load_cloudnet_hybrid_campaign(const PipelineConfig& config) {
                     static_cast<int>(step_index),
                     static_cast<int>(data.ground_measurements.size()),
                     ground.relative_humidity,
-                    config.simulation.lidar_ratio_sr
+                    config.simulation.lidar_ratio_sr,
+                    ground.wind_speed_ms,
+                    ground.wind_dir_deg,
+                    config.simulation
                 );
-                double background_counts = 10.2 + sample_gaussian(rng, 0.0, 0.35);
-                double laser_energy_mj = 1.0 + sample_gaussian(rng, 0.0, 0.02);
+                double background_counts = std::max(2.0,
+                    config.simulation.background_counts_mean
+                    + sample_gaussian(rng, 0.0, config.simulation.background_counts_jitter));
+                double laser_energy_mj = std::max(0.05,
+                    config.simulation.pulse_energy_mj
+                    * (1.0 + sample_gaussian(rng, 0.0, config.simulation.pulse_energy_jitter)));
                 std::vector<double> raw_counts = simulate_raw_counts(
                     fields.true_backscatter,
                     fields.true_extinction,
@@ -2467,7 +2550,7 @@ CampaignData load_cloudnet_hybrid_campaign(const PipelineConfig& config) {
                     ranges_m,
                     laser_energy_mj,
                     background_counts,
-                    config.simulation.system_constant,
+                    config.simulation,
                     rng
                 );
                 auto pad3 = [](double deg) {
@@ -2529,6 +2612,12 @@ CampaignData load_cloudnet_hybrid_campaign(const PipelineConfig& config) {
         {"cloudnet_file", local_file.string()},
         {"measurement_date", config.source.cloudnet.date},
         {"ground_provider", "open-meteo"},
+        {"instrument_preset", config.simulation.instrument_preset},
+        {"application_mode", config.simulation.application_mode},
+        {"vendor_profile", config.simulation.vendor_profile},
+        {"wavelength_nm", config.simulation.wavelength_nm},
+        {"range_bin_m", config.simulation.range_bin_m},
+        {"full_overlap_m", config.simulation.full_overlap_m},
         {"real_stare_profile_count", static_cast<int>(data.ground_measurements.size())},
         {"synthetic_ppi_profile_count", ppi_count},
     };
@@ -3684,40 +3773,12 @@ DatasetRunResult run_pipeline_on_dataset(
     result.ground_measurements = ground_measurements;
 
     auto total_start = std::chrono::steady_clock::now();
-    // 第一阶段：逐条廓线反演
+    // 第一阶段：逐条廓线反演。这里使用类化处理链，便于把 L0->L1->L2 每一步独立替换/测试。
+    RetrievalConfig retrieval_for_run = config.retrieval;
+    retrieval_for_run.aerosol_lidar_ratio_sr = lidar_ratio_override.value_or(config.retrieval.aerosol_lidar_ratio_sr);
+    SingleProfileProcessingChain profile_chain(retrieval_for_run, config.humidity);
     for (const auto& profile : profiles) {
-        auto started_at = std::chrono::steady_clock::now();
-        PreprocessResult preprocessed = preprocess_profile(profile);
-        auto inversion = run_fernald_inversion(
-            profile,
-            preprocessed.attenuated_backscatter,
-            lidar_ratio_override.value_or(config.retrieval.aerosol_lidar_ratio_sr),
-            config.retrieval.reference_aerosol_backscatter
-        );
-        std::vector<double> dry_extinction = inversion.first;
-        if (!disable_humidity) {
-            // 默认对反演结果做湿度修正（得到的 dry_extinction 才能用于 PM 校准）
-            dry_extinction = apply_humidity_correction(
-                inversion.first,
-                profile.relative_humidity,
-                config.humidity.dry_reference_rh,
-                config.humidity.hygroscopicity
-            );
-        }
-        auto ended_at = std::chrono::steady_clock::now();
-        result.processed_profiles.push_back(ProcessedProfile{
-            profile,
-            preprocessed.l1_signal,
-            preprocessed.attenuated_backscatter,
-            preprocessed.snr,
-            inversion.first,
-            dry_extinction,
-            {},
-            {},
-            profile_bins_to_enu(profile),
-            preprocessed.qc_flags,
-            std::chrono::duration<double, std::milli>(ended_at - started_at).count(),
-        });
+        result.processed_profiles.push_back(profile_chain.process(profile, disable_humidity));
     }
 
     // 第二阶段：构造地面特征表 + 拟合 PM 模型 + 求偏置 + 应用到每条廓线
@@ -3834,6 +3895,88 @@ Json station_offsets_to_json(const std::map<std::string, StationOffset>& station
     return Json(std::move(output));
 }
 
+Json build_device_product_schema(const Json& source_metadata) {
+    std::string vendor_profile = source_metadata.contains("vendor_profile")
+        ? source_metadata.at("vendor_profile").string_value()
+        : "generic_jsonl";
+
+    Json::array_type l0_fields{
+        Json("type"), Json("timestamp"), Json("sequence_id"), Json("frame_id"),
+        Json("scan_cycle_id"), Json("scan_mode"), Json("azimuth_deg"),
+        Json("elevation_deg"), Json("ranges_m"), Json("raw_counts"),
+        Json("laser_energy_mj"), Json("background_counts"), Json("overlap"),
+        Json("channel_id"), Json("detector_mode"), Json("integration_pulses"),
+        Json("accumulation_time_ms")
+    };
+    Json::array_type telemetry_fields{
+        Json("device_state"), Json("scan_scheduler_state"), Json("gps_lock"),
+        Json("ntp_sync"), Json("clock_offset_ms"), Json("enclosure_temp_c"),
+        Json("laser_head_temp_c"), Json("detector_temp_c"),
+        Json("window_transmission"), Json("window_contamination_index"),
+        Json("rain_sensor_wet"), Json("sun_background_counts"),
+        Json("fan_state"), Json("door_state"), Json("wiper_state"),
+        Json("diagnostic_flags")
+    };
+    Json::array_type l3_fields{
+        Json("x_m"), Json("y_m"), Json("z_m"), Json("pm25"),
+        Json("confidence"), Json("source_ray_count")
+    };
+
+    Json profile_specific = Json::object_type{};
+    if (vendor_profile == "vaisala_cl61_like") {
+        profile_specific = Json::object_type{
+            {"public_format_basis", "Vaisala CL61-like NetCDF public product schema"},
+            {"dimensions", Json::array_type{Json("time"), Json("range"), Json("layer")}},
+            {"variables", Json::array_type{
+                Json("p_pol"), Json("x_pol"), Json("beta_att"),
+                Json("linear_depol_ratio"), Json("cloud_base_heights"),
+                Json("vertical_visibility"), Json("window_condition"),
+                Json("laser_power_percent"), Json("background_radiance"),
+                Json("internal_temperature"), Json("internal_humidity"),
+                Json("laser_temperature")
+            }},
+            {"note", "Real CL61 low-level message frames are vendor-specific; this project maps public NetCDF-style products."}
+        };
+    } else if (vendor_profile == "raymetrics_pmeye_like") {
+        profile_specific = Json::object_type{
+            {"public_format_basis", "Raymetrics PMeye-like scanning aerosol LiDAR product"},
+            {"channels", Json::array_type{Json("elastic_355nm"), Json("depolarization_355nm_optional")}},
+            {"variables", Json::array_type{
+                Json("raw_signal_analog"), Json("raw_signal_photon_counting"),
+                Json("overlap_corrected_signal"), Json("attenuated_backscatter"),
+                Json("extinction"), Json("pm25"), Json("pm10"),
+                Json("depolarization_ratio_optional"), Json("scan_azimuth"),
+                Json("scan_elevation"), Json("source_location_3d")
+            }},
+            {"note", "Public brochures expose hardware/product behavior, not private TCP frame layouts."}
+        };
+    } else if (vendor_profile == "halo_hpl_like") {
+        profile_specific = Json::object_type{
+            {"public_format_basis", "HALO StreamLine HPL/ASCII-like Doppler LiDAR replay product"},
+            {"variables", Json::array_type{
+                Json("range"), Json("azimuth"), Json("elevation"),
+                Json("radial_velocity_optional"), Json("snr_or_cnr"),
+                Json("beta_or_intensity"), Json("scan_schedule")
+            }},
+            {"note", "HALO atmospheric Doppler products differ from PM elastic LiDAR; this is useful for replay/scheduler realism."}
+        };
+    } else {
+        profile_specific = Json::object_type{
+            {"public_format_basis", "Project generic JSON line protocol"},
+            {"note", "Use this when no vendor-specific public schema is selected."}
+        };
+    }
+
+    return Json::object_type{
+        {"vendor_profile", vendor_profile},
+        {"l0_realtime_frame_fields", Json(std::move(l0_fields))},
+        {"device_telemetry_fields", Json(std::move(telemetry_fields))},
+        {"l3_volume_fields", Json(std::move(l3_fields))},
+        {"profile_specific_mapping", profile_specific},
+        {"private_protocol_warning", "A 100% clone of a commercial device frame requires vendor SDK/protocol docs or captured sample frames."},
+    };
+}
+
 /**
  * @brief 用时间戳序列推断采样间隔（分钟），用于前端展示 dataset_summary。
  *
@@ -3925,6 +4068,8 @@ Json build_demo_payload(
     // 最新时间步的 PPI 网格化（按方位角排序后逐距离门写 cell）
     std::string latest_timestamp = timestamps.empty() ? std::string{} : timestamps.back();
     Json::array_type ppi_cells;
+    Json::array_type volume_voxels;
+    constexpr double voxel_size_m = 100.0;
     if (!latest_timestamp.empty()) {
         std::vector<const ProcessedProfile*> latest_ppi_profiles;
         for (const auto* profile : grouped[latest_timestamp]) {
@@ -3946,6 +4091,48 @@ Json build_demo_payload(
                     {"is_true_hotspot", processed->profile.true_hotspot_mask[index] == 1},
                 });
             }
+        }
+
+        struct VoxelAccumulator {
+            double x_sum = 0.0;
+            double y_sum = 0.0;
+            double z_sum = 0.0;
+            double pm25_weighted_sum = 0.0;
+            double confidence_sum = 0.0;
+            int count = 0;
+        };
+        std::map<std::string, VoxelAccumulator> voxels;
+        for (const auto* processed : latest_ppi_profiles) {
+            for (std::size_t index = 0; index < processed->enu_points_m.size(); ++index) {
+                const auto& point = processed->enu_points_m[index];
+                int ix = static_cast<int>(std::round(point[0] / voxel_size_m));
+                int iy = static_cast<int>(std::round(point[1] / voxel_size_m));
+                int iz = static_cast<int>(std::round(point[2] / voxel_size_m));
+                std::ostringstream key;
+                key << ix << ':' << iy << ':' << iz;
+                double snr = index < processed->snr.size() ? processed->snr[index] : 0.0;
+                double confidence = clamp(snr / 12.0, 0.05, 1.0);
+                auto& voxel = voxels[key.str()];
+                voxel.x_sum += point[0];
+                voxel.y_sum += point[1];
+                voxel.z_sum += point[2];
+                voxel.pm25_weighted_sum += processed->pm25[index] * confidence;
+                voxel.confidence_sum += confidence;
+                ++voxel.count;
+            }
+        }
+        for (const auto& [_, voxel] : voxels) {
+            if (voxel.count <= 0 || voxel.confidence_sum <= 0.0) {
+                continue;
+            }
+            volume_voxels.push_back(Json::object_type{
+                {"x_m", voxel.x_sum / static_cast<double>(voxel.count)},
+                {"y_m", voxel.y_sum / static_cast<double>(voxel.count)},
+                {"z_m", voxel.z_sum / static_cast<double>(voxel.count)},
+                {"pm25", voxel.pm25_weighted_sum / voxel.confidence_sum},
+                {"confidence", voxel.confidence_sum / static_cast<double>(voxel.count)},
+                {"source_ray_count", voxel.count},
+            });
         }
     }
 
@@ -4023,6 +4210,12 @@ Json build_demo_payload(
             {"timestamp", latest_timestamp},
             {"cells", Json(std::move(ppi_cells))},
         }},
+        {"volume", Json::object_type{
+            {"timestamp", latest_timestamp},
+            {"coordinate_system", "ENU"},
+            {"voxel_size_m", voxel_size_m},
+            {"voxels", Json(std::move(volume_voxels))},
+        }},
         {"hotspots", Json(std::move(latest_hotspots))},
         {"qc", Json::object_type{
             {"times", Json(std::move(qc_times))},
@@ -4032,6 +4225,7 @@ Json build_demo_payload(
             {"laser_energy_mj", Json(std::move(qc_energy))},
         }},
         {"alerts", Json(std::move(alerts))},
+        {"device_product_schema", build_device_product_schema(source_metadata)},
         {"metrics", primary.metrics},
         {"sensitivity", Json(sensitivity)},
         {"ablation", Json(ablation)},
@@ -4462,6 +4656,9 @@ PipelineConfig parse_pipeline_config(const Json& value) {
 
     // 模拟参数（必填）
     const Json& simulation = value.at("simulation");
+    config.simulation.instrument_preset = simulation.contains("instrument_preset") ? simulation.at("instrument_preset").string_value() : config.simulation.instrument_preset;
+    config.simulation.application_mode = simulation.contains("application_mode") ? simulation.at("application_mode").string_value() : config.simulation.application_mode;
+    config.simulation.vendor_profile = simulation.contains("vendor_profile") ? simulation.at("vendor_profile").string_value() : config.simulation.vendor_profile;
     config.simulation.seed = simulation.at("seed").int_value();
     config.simulation.time_steps = simulation.at("time_steps").int_value();
     config.simulation.minutes_per_step = simulation.at("minutes_per_step").int_value();
@@ -4480,6 +4677,19 @@ PipelineConfig parse_pipeline_config(const Json& value) {
     config.simulation.ppi_azimuth_step_deg = simulation.at("ppi_azimuth_step_deg").number_value();
     config.simulation.system_constant = simulation.at("system_constant").number_value();
     config.simulation.lidar_ratio_sr = simulation.at("lidar_ratio_sr").number_value();
+    config.simulation.wavelength_nm = simulation.contains("wavelength_nm") ? simulation.at("wavelength_nm").number_value() : config.simulation.wavelength_nm;
+    config.simulation.pulse_energy_mj = simulation.contains("pulse_energy_mj") ? simulation.at("pulse_energy_mj").number_value() : config.simulation.pulse_energy_mj;
+    config.simulation.pulse_energy_jitter = simulation.contains("pulse_energy_jitter") ? simulation.at("pulse_energy_jitter").number_value() : config.simulation.pulse_energy_jitter;
+    config.simulation.background_counts_mean = simulation.contains("background_counts_mean") ? simulation.at("background_counts_mean").number_value() : config.simulation.background_counts_mean;
+    config.simulation.background_counts_jitter = simulation.contains("background_counts_jitter") ? simulation.at("background_counts_jitter").number_value() : config.simulation.background_counts_jitter;
+    config.simulation.full_overlap_m = simulation.contains("full_overlap_m") ? simulation.at("full_overlap_m").number_value() : config.simulation.full_overlap_m;
+    config.simulation.min_overlap = simulation.contains("min_overlap") ? simulation.at("min_overlap").number_value() : config.simulation.min_overlap;
+    config.simulation.detector_dark_counts = simulation.contains("detector_dark_counts") ? simulation.at("detector_dark_counts").number_value() : config.simulation.detector_dark_counts;
+    config.simulation.read_noise_counts = simulation.contains("read_noise_counts") ? simulation.at("read_noise_counts").number_value() : config.simulation.read_noise_counts;
+    config.simulation.adc_saturation_counts = simulation.contains("adc_saturation_counts") ? simulation.at("adc_saturation_counts").number_value() : config.simulation.adc_saturation_counts;
+    config.simulation.dead_time_loss = simulation.contains("dead_time_loss") ? simulation.at("dead_time_loss").number_value() : config.simulation.dead_time_loss;
+    config.simulation.solar_background_scale = simulation.contains("solar_background_scale") ? simulation.at("solar_background_scale").number_value() : config.simulation.solar_background_scale;
+    config.simulation.vehicle_speed_ms = simulation.contains("vehicle_speed_ms") ? simulation.at("vehicle_speed_ms").number_value() : config.simulation.vehicle_speed_ms;
 
     // 反演参数（必填）
     const Json& retrieval = value.at("retrieval");
@@ -4605,6 +4815,7 @@ Json run_end_to_end(const PipelineConfig& config, const std::optional<std::files
         write_json_file(*output_root / "data" / "raw" / "simulated_demo_campaign.json", Json(std::move(raw_profiles)));
         write_json_file(*output_root / "data" / "l1" / "demo_preprocessed.json", Json(std::move(l1_profiles)));
         write_json_file(*output_root / "data" / "l2" / "demo_results.json", demo_payload);
+        write_json_file(*output_root / "data" / "vendor" / "device_product_schema.json", demo_payload.at("device_product_schema"));
     }
 
     return demo_payload;
@@ -4694,55 +4905,97 @@ Json build_summary_payload(const Json& results) {
 // 单步处理 API —— 供实时客户端逐帧处理使用
 // ============================================================================
 
-ProcessedProfile process_single_profile(
+PreprocessResult BackgroundPreprocessStep::process(const LidarProfile& profile) const {
+    return preprocess_profile(profile);
+}
+
+FernaldInversionStep::FernaldInversionStep(RetrievalConfig config)
+    : config_(std::move(config)) {
+}
+
+std::pair<std::vector<double>, std::vector<double>> FernaldInversionStep::process(
     const LidarProfile& profile,
-    const RetrievalConfig& retrieval,
-    const HumidityConfig& humidity
-) {
-    auto started_at = std::chrono::steady_clock::now();
-
-    PreprocessResult preprocessed = preprocess_profile(profile);
-    auto inversion = run_fernald_inversion(
+    const std::vector<double>& attenuated_backscatter) const {
+    return run_fernald_inversion(
         profile,
-        preprocessed.attenuated_backscatter,
-        retrieval.aerosol_lidar_ratio_sr,
-        retrieval.reference_aerosol_backscatter
+        attenuated_backscatter,
+        config_.aerosol_lidar_ratio_sr,
+        config_.reference_aerosol_backscatter
     );
-    std::vector<double> dry_extinction = apply_humidity_correction(
-        inversion.first,
-        profile.relative_humidity,
-        humidity.dry_reference_rh,
-        humidity.hygroscopicity
-    );
+}
 
-    // 经验 PM 估算：用干消光 × 转换系数近似 PM2.5（无地面标定时的粗略代理）
-    // 典型城市气溶胶：1 km^-1 干消光 ≈ 20-30 µg/m³ PM2.5
-    // PM10 ≈ PM2.5 × 1.5（粗颗粒贡献）
+HumidityCorrectionStep::HumidityCorrectionStep(HumidityConfig config)
+    : config_(std::move(config)) {
+}
+
+std::vector<double> HumidityCorrectionStep::process(
+    const std::vector<double>& extinction,
+    double relative_humidity) const {
+    return apply_humidity_correction(
+        extinction,
+        relative_humidity,
+        config_.dry_reference_rh,
+        config_.hygroscopicity
+    );
+}
+
+std::vector<std::vector<double>> CoordinateProjectionStep::process(const LidarProfile& profile) const {
+    return profile_bins_to_enu(profile);
+}
+
+HotspotDetectionStep::HotspotDetectionStep(HotspotConfig config)
+    : config_(std::move(config)) {
+}
+
+std::vector<Hotspot> HotspotDetectionStep::process(const std::vector<ProcessedProfile>& ppi_profiles) const {
+    return detect_hotspots_from_processed(ppi_profiles, config_);
+}
+
+SingleProfileProcessingChain::SingleProfileProcessingChain(RetrievalConfig retrieval, HumidityConfig humidity)
+    : inversion_(std::move(retrieval)),
+      humidity_(std::move(humidity)) {
+}
+
+ProcessedProfile SingleProfileProcessingChain::process(const LidarProfile& profile, bool disable_humidity) const {
+    auto started_at = std::chrono::steady_clock::now();
+    PreprocessResult preprocessed = preprocess_.process(profile);
+    auto inversion = inversion_.process(profile, preprocessed.attenuated_backscatter);
+    std::vector<double> dry_extinction = disable_humidity
+        ? inversion.first
+        : humidity_.process(inversion.first, profile.relative_humidity);
+
     std::vector<double> pm25;
     std::vector<double> pm10;
     pm25.reserve(dry_extinction.size());
     pm10.reserve(dry_extinction.size());
     for (double ext : dry_extinction) {
-        double est_pm25 = std::max(0.0, ext) * 25.0; // 经验转换系数
+        double est_pm25 = std::max(0.0, ext) * 25.0;
         pm25.push_back(est_pm25);
         pm10.push_back(est_pm25 * 1.5);
     }
 
     auto ended_at = std::chrono::steady_clock::now();
-
     return ProcessedProfile{
         profile,
         preprocessed.l1_signal,
         preprocessed.attenuated_backscatter,
         preprocessed.snr,
-        inversion.first,           // extinction
-        dry_extinction,            // dry_extinction
-        std::move(pm25),           // pm25 — 经验估算
-        std::move(pm10),           // pm10 — 经验估算
-        profile_bins_to_enu(profile),
+        inversion.first,
+        dry_extinction,
+        std::move(pm25),
+        std::move(pm10),
+        projection_.process(profile),
         preprocessed.qc_flags,
         std::chrono::duration<double, std::milli>(ended_at - started_at).count(),
     };
+}
+
+ProcessedProfile process_single_profile(
+    const LidarProfile& profile,
+    const RetrievalConfig& retrieval,
+    const HumidityConfig& humidity
+) {
+    return SingleProfileProcessingChain(retrieval, humidity).process(profile);
 }
 
 std::vector<Hotspot> detect_hotspots_from_processed(
