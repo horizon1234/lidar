@@ -57,6 +57,16 @@ cmake --build build -j$(nproc)
 
 说明：当前 C++ 端已覆盖默认 simulation 主链、批处理、静态 Demo、live HTTP API、Open-Meteo 公开样例抓取，以及基于 NetCDF 的 Cloudnet hybrid 本地读取路径。要跑 `configs/cloudnet_hybrid_pipeline.json`，需要在编译时链接 NetCDF；在 Windows C++ 构建下，可以先用 `lidar_fetch_cloudnet_public_sample` 抓取样例，也可以让 Cloudnet loader 在缺文件时自动下载并生成对齐后的 Open-Meteo 资产。Python 抓取脚本和 Python API 仍保留作参考实现。
 
+面向工地、城市固定站和走航车的逼真化仿真配置：
+
+```bash
+./bin/lidar_run_batch --config configs/field_scanning_lidar.json --output .
+./bin/lidar_run_batch --config configs/mobile_mapping_lidar.json --output .
+./bin/lidar_build_demo_assets --config configs/field_scanning_lidar.json --output-root .
+```
+
+这些配置启用更接近现场设备的参数：355 nm 弹性通道、mJ 级脉冲能量、37.5/30 m 距离门、10° 方位步进、多仰角体扫、full-overlap、太阳背景、死时间/饱和、风驱动烟羽和 L3 `volume` 体素产品。设计说明见 `docs/realistic_lidar_simulation.md`。
+
 ## Python 参考入口
 
 1. 生成样例数据、L1 和 L2 结果、静态 Demo 页面：
@@ -222,6 +232,7 @@ GUI 功能：
 - 告警事件列表 + 状态变更历史详情
 - 处置设备状态联动显示
 - 一键生成并保存报表
+- C++ demo payload 额外输出 L3 `volume` 体素字段，可用于后续 3D 污染云显示
 
 ## 补充文档
 
