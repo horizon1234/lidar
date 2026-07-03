@@ -9,6 +9,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(netCDF REQUIRED)
 find_package(CURL REQUIRED)
 
+# ---- 所有可执行文件统一输出到项目根目录的 bin/ ----
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+
 add_library(lidar_demo STATIC
     cpp/src/lidar_demo.cpp
 )
