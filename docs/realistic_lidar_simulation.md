@@ -28,8 +28,8 @@
 
 新增配置：
 
-- `configs/field_scanning_lidar.json`：工地/城市固定扫描站。
-- `configs/mobile_mapping_lidar.json`：走航车扫描。
+- `configs/FieldScanningLidar.json`：工地/城市固定扫描站。
+- `configs/MobileMappingLidar.json`：走航车扫描。
 
 ## 3. 仿真信号模型
 

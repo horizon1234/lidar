@@ -47,25 +47,26 @@ cmake --build build -j$(nproc)
 常用入口（编译后位于 `bin/`）：
 
 ```bash
-./bin/lidar_build_demo_assets --config configs/default_pipeline.json --output-root .
-./bin/lidar_run_batch --config configs/default_pipeline.json --output .
-./bin/lidar_api_server --config configs/default_pipeline.json --once
-./bin/lidar_api_server --config configs/default_pipeline.json --host 127.0.0.1 --port 8765
+./bin/lidar_build_demo_assets --config configs/DefaultPipeline.json --output-root .
+./bin/lidar_run_batch --config configs/DefaultPipeline.json --output .
+./bin/lidar_api_server --config configs/DefaultPipeline.json --once
+./bin/lidar_api_server --config configs/DefaultPipeline.json --host 127.0.0.1 --port 8765
 ./bin/lidar_fetch_public_ground_data --output-root .
-./bin/lidar_fetch_cloudnet_public_sample --config configs/cloudnet_hybrid_pipeline.json --output-root .
+./bin/lidar_fetch_cloudnet_public_sample --config configs/CloudnetHybridPipeline.json --output-root .
 ```
 
-说明：当前 C++ 端已覆盖默认 simulation 主链、批处理、静态 Demo、live HTTP API、Open-Meteo 公开样例抓取，以及基于 NetCDF 的 Cloudnet hybrid 本地读取路径。要跑 `configs/cloudnet_hybrid_pipeline.json`，需要在编译时链接 NetCDF；在 Windows C++ 构建下，可以先用 `lidar_fetch_cloudnet_public_sample` 抓取样例，也可以让 Cloudnet loader 在缺文件时自动下载并生成对齐后的 Open-Meteo 资产。Python 抓取脚本和 Python API 仍保留作参考实现。
+说明：当前 C++ 端已覆盖默认 simulation 主链、批处理、静态 Demo、live HTTP API、Open-Meteo 公开样例抓取，以及基于 NetCDF 的 Cloudnet hybrid 本地读取路径。要跑 `configs/CloudnetHybridPipeline.json`，需要在编译时链接 NetCDF；在 Windows C++ 构建下，可以先用 `lidar_fetch_cloudnet_public_sample` 抓取样例，也可以让 Cloudnet loader 在缺文件时自动下载并生成对齐后的 Open-Meteo 资产。Python 抓取脚本和 Python API 仍保留作参考实现。
 
 面向工地、城市固定站和走航车的逼真化仿真配置：
 
 ```bash
-./bin/lidar_run_batch --config configs/field_scanning_lidar.json --output .
-./bin/lidar_run_batch --config configs/mobile_mapping_lidar.json --output .
-./bin/lidar_build_demo_assets --config configs/field_scanning_lidar.json --output-root .
+./bin/lidar_run_batch --config configs/CommercialPmeyeSector.json --output .
+./bin/lidar_run_batch --config configs/FieldScanningLidar.json --output .
+./bin/lidar_run_batch --config configs/MobileMappingLidar.json --output .
+./bin/lidar_build_demo_assets --config configs/FieldScanningLidar.json --output-root .
 ```
 
-这些配置启用更接近现场设备的参数：355 nm 弹性通道、mJ 级脉冲能量、37.5/30 m 距离门、10° 方位步进、多仰角体扫、full-overlap、太阳背景、死时间/饱和、风驱动烟羽和 L3 `volume` 体素产品。设计说明见 `docs/realistic_lidar_simulation.md`。
+其中 `CommercialPmeyeSector.json` 用于优先还原商用 PM 扫描 LiDAR 的观测节奏：355 nm 弹性通道、20 Hz PRF、5 s 单视线积分（约 100 shots）、0-180° 扇区、2.5° 方位步进、约 365 s 一轮扇区扫描。其他配置启用更接近现场设备的参数：mJ 级脉冲能量、37.5/30 m 距离门、多仰角体扫、full-overlap、太阳背景、死时间/饱和、风驱动烟羽和 L3 `volume` 体素产品。设计说明见 `docs/realistic_lidar_simulation.md`。
 
 ## Python 参考入口
 
@@ -199,8 +200,10 @@ make server client      # Makefile 方式，输出到 bin/
 
 | 程序 | 参数 | 默认值 | 说明 |
 |------|------|--------|------|
-| `lidar_sim_server` | `[port] [step_delay_ms]` | `19850 500` | 监听端口、时间步间隔 |
+| `lidar_sim_server` | `[port] [step_delay_ms] [playback_time_scale]` | `19850 500 100` | 监听端口、时间步间隔、真实采集节奏播放倍率 |
 | `lidar_control_client` | `[host] [port] [output_dir]` | `127.0.0.1 19850 data/client_output` | 连接地址、端口、输出目录 |
+
+`playback_time_scale=1` 表示按设备真实积分节奏推送；默认 `100` 会把 5 s 单视线积分压缩为约 50 ms，便于本地演示。
 
 ### 闭环管理组件
 

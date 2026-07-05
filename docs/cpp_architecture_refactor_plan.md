@@ -10,8 +10,8 @@
 
 | 路径 | 行数 | 职责 | 现状评价 |
 |---|---|---|---|
-| `cpp/include/lidar_demo/lidar_demo.hpp` | 418 | 全量公共 API 声明 | 所有类型/函数集中在一个头文件，include 开销大、编译耦合高 |
-| `cpp/src/lidar_demo.cpp` | 4,537 | 全量实现（JSON 引擎 + 仿真 + L1 + Fernald + 湿度 + ENU + PM 标定 + 热点 + 评估 + HTTP + NetCDF + dashboard HTML） | **单编译单元 4500+ 行**，改任何一处都要全量重编 |
+| `cpp/include/LidarDemo/LidarDemo.hpp` | 418 | 全量公共 API 声明 | 所有类型/函数集中在一个头文件，include 开销大、编译耦合高 |
+| `cpp/src/LidarDemo.cpp` | 4,537 | 全量实现（JSON 引擎 + 仿真 + L1 + Fernald + 湿度 + ENU + PM 标定 + 热点 + 评估 + HTTP + NetCDF + dashboard HTML） | **单编译单元 4500+ 行**，改任何一处都要全量重编 |
 | `cpp/apps/api_server.cpp` | 437 | 原生 socket HTTP API（每请求跑一次完整管线） | 每次请求重跑全流程，无状态、无流式推送 |
 | `cpp/apps/run_batch.cpp` | 59 | 批处理 Worker CLI | 功能正确，可保留 |
 | `cpp/apps/build_demo_assets.cpp` | 64 | 静态 Demo HTML 生成 | 功能正确，可保留 |
@@ -502,7 +502,7 @@ private:
 #### 运行流程
 
 ```
-lidar_sim_server --port 9876 --config configs/default_pipeline.json
+lidar_sim_server --port 9876 --config configs/DefaultPipeline.json
 
   主线程:
     TcpServer.start()
@@ -953,7 +953,7 @@ private:
 ```cpp
 // client/apps/main_headless.cpp
 //
-// lidar_control_headless --server 127.0.0.1:9876 --config configs/default_pipeline.json
+// lidar_control_headless --server 127.0.0.1:9876 --config configs/DefaultPipeline.json
 //
 // 功能：
 //   1. 连接 lidar_sim_server

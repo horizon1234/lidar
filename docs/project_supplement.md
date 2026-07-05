@@ -142,7 +142,7 @@
 | --- | --- |
 | C++ 主链 | `cpp/` + `CMakeLists.txt`，覆盖 simulation 主链、Cloudnet hybrid 本地读取、batch、demo、live HTTP API 和 `--once` 摘要输出 |
 | 算法模块 | `lidar_core/` |
-| 配置 | `configs/default_pipeline.json` |
+| 配置 | `configs/DefaultPipeline.json` |
 | API | `services/api/server.py` + `cpp/apps/api_server.cpp` |
 | 任务调度 / 批处理 | `services/workers/run_batch.py` |
 | 可复现实验脚本 | `scripts/build_demo_assets.py`、`scripts/fetch_public_ground_data.py`、`cpp/apps/fetch_public_ground_data.cpp`、`cpp/apps/fetch_cloudnet_public_sample.cpp` |
@@ -190,7 +190,7 @@ python scripts/build_demo_assets.py
 或使用 C++ 入口：
 
 ```powershell
-build/lidar_build_demo_assets --config configs/default_pipeline.json --output-root .
+build/lidar_build_demo_assets --config configs/DefaultPipeline.json --output-root .
 ```
 
 输出文件：
@@ -207,17 +207,17 @@ python services/api/server.py --once
 对应的 C++ live API / 摘要输出：
 
 ```powershell
-build/lidar_api_server --config configs/default_pipeline.json --once
-build/lidar_api_server --config configs/default_pipeline.json --host 127.0.0.1 --port 8765
+build/lidar_api_server --config configs/DefaultPipeline.json --once
+build/lidar_api_server --config configs/DefaultPipeline.json --host 127.0.0.1 --port 8765
 ```
 
 Cloudnet hybrid 在 C++ 端的调用方式与默认链相同，只需要换配置：
 
 ```powershell
-build/lidar_fetch_cloudnet_public_sample --config configs/cloudnet_hybrid_pipeline.json --output-root .
-build/lidar_run_batch --config configs/cloudnet_hybrid_pipeline.json --output .
-build/lidar_api_server --config configs/cloudnet_hybrid_pipeline.json --once
-build/lidar_api_server --config configs/cloudnet_hybrid_pipeline.json --host 127.0.0.1 --port 8765
+build/lidar_fetch_cloudnet_public_sample --config configs/CloudnetHybridPipeline.json --output-root .
+build/lidar_run_batch --config configs/CloudnetHybridPipeline.json --output .
+build/lidar_api_server --config configs/CloudnetHybridPipeline.json --once
+build/lidar_api_server --config configs/CloudnetHybridPipeline.json --host 127.0.0.1 --port 8765
 ```
 
 北京地面 PM / 气象公开样例现在也可以直接用 C++ 入口抓取：

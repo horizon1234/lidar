@@ -28,7 +28,7 @@ build/lidar_fetch_public_ground_data --output-root .
 Cloudnet Bucharest 公开样例也已有 C++ 抓取入口：
 
 ```powershell
-build/lidar_fetch_cloudnet_public_sample --config configs/cloudnet_hybrid_pipeline.json --output-root .
+build/lidar_fetch_cloudnet_public_sample --config configs/CloudnetHybridPipeline.json --output-root .
 ```
 
 对应输出会落到 `data/public/cloudnet/`，包括 `.nc` 原始文件、Open-Meteo 原始 JSON、对齐后的 ground JSON/CSV，以及 manifest。
