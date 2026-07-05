@@ -1,0 +1,64 @@
+{
+  "site": {
+    "name": "Commercial PM LiDAR Sector Demo",
+    "site_id": "commercial-pmeye-sector-001",
+    "latitude_deg": 39.9042,
+    "longitude_deg": 116.4074,
+    "altitude_m": 48.0
+  },
+  "simulation": {
+    "instrument_preset": "field_scanning_pm_lidar",
+    "application_mode": "construction_site",
+    "vendor_profile": "raymetrics_pmeye_like",
+    "seed": 21,
+    "time_steps": 6,
+    "minutes_per_step": 20,
+    "range_bin_count": 160,
+    "range_bin_m": 37.5,
+    "ppi_elevations_deg": [5.0],
+    "ppi_azimuth_start_deg": 0.0,
+    "ppi_azimuth_stop_deg": 180.0,
+    "ppi_azimuth_step_deg": 2.5,
+    "ppi_line_dwell_s": 5.0,
+    "ppi_scan_overhead_s": 0.0,
+    "pulse_repetition_hz": 20.0,
+    "system_constant": 15000000.0,
+    "lidar_ratio_sr": 45.0,
+    "wavelength_nm": 355.0,
+    "pulse_energy_mj": 8.0,
+    "pulse_energy_jitter": 0.04,
+    "background_counts_mean": 120.0,
+    "background_counts_jitter": 18.0,
+    "full_overlap_m": 200.0,
+    "min_overlap": 0.08,
+    "detector_dark_counts": 8.0,
+    "read_noise_counts": 3.0,
+    "adc_saturation_counts": 4200000.0,
+    "dead_time_loss": 0.000000018,
+    "solar_background_scale": 1.0,
+    "vehicle_speed_ms": 0.0,
+    "truth_hotspot_ext_threshold": 0.050
+  },
+  "retrieval": {
+    "aerosol_lidar_ratio_sr": 45.0,
+    "reference_aerosol_backscatter": 0.0004
+  },
+  "humidity": {
+    "dry_reference_rh": 0.45,
+    "hygroscopicity": 1.1
+  },
+  "pm_calibration": {
+    "train_ratio": 0.6,
+    "val_ratio": 0.2,
+    "surface_bin_count": 8
+  },
+  "hotspot": {
+    "pm25_threshold_ugm3": 10000.0,
+    "scan_relative_pm25_threshold_ugm3": 10.0,
+    "scan_relative_dry_ext_threshold": 0.32,
+    "min_cells": 18
+  },
+  "evaluation": {
+    "sensitivity_lidar_ratios": [35.0, 45.0, 55.0]
+  }
+}
