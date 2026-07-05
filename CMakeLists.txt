@@ -13,7 +13,8 @@ find_package(CURL REQUIRED)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
 add_library(lidar_demo STATIC
-    cpp/src/lidar_demo.cpp
+    cpp/src/JsonEngine.cpp
+    cpp/src/LidarDemo.cpp
 )
 
 target_include_directories(lidar_demo PUBLIC
@@ -32,23 +33,23 @@ if (WIN32)
     target_link_libraries(lidar_demo PUBLIC winhttp)
 endif()
 
-add_executable(lidar_run_batch cpp/apps/run_batch.cpp)
+add_executable(lidar_run_batch cpp/apps/RunBatch.cpp)
 target_link_libraries(lidar_run_batch PRIVATE lidar_demo)
 
-add_executable(lidar_build_demo_assets cpp/apps/build_demo_assets.cpp)
+add_executable(lidar_build_demo_assets cpp/apps/BuildDemoAssets.cpp)
 target_link_libraries(lidar_build_demo_assets PRIVATE lidar_demo)
 
-add_executable(lidar_api_server cpp/apps/api_server.cpp)
+add_executable(lidar_api_server cpp/apps/ApiServer.cpp)
 target_link_libraries(lidar_api_server PRIVATE lidar_demo)
 
 if (WIN32)
     target_link_libraries(lidar_api_server PRIVATE ws2_32)
 endif()
 
-add_executable(lidar_fetch_public_ground_data cpp/apps/fetch_public_ground_data.cpp)
+add_executable(lidar_fetch_public_ground_data cpp/apps/FetchPublicGroundData.cpp)
 target_link_libraries(lidar_fetch_public_ground_data PRIVATE lidar_demo)
 
-add_executable(lidar_fetch_cloudnet_public_sample cpp/apps/fetch_cloudnet_public_sample.cpp)
+add_executable(lidar_fetch_cloudnet_public_sample cpp/apps/FetchCloudnetPublicSample.cpp)
 target_link_libraries(lidar_fetch_cloudnet_public_sample PRIVATE lidar_demo)
 
 # ---- 三层架构：核心库 → 协议层 → 仿真服务器 / 主控客户端 ----
@@ -60,28 +61,44 @@ add_subdirectory(cpp/client)
 # ---- 第 19 章教学算例 (cpp/examples/) ----
 # 这些算例是纯 C++ 项目, 只依赖 STL, 不依赖 lidar_demo 库或 NetCDF,
 # 这样学习者只看算法本身, 不被框架代码绕进去。
-add_executable(lidar_example_1d_ray cpp/examples/example_1d_ray.cpp)
-add_executable(lidar_example_2d_ppi cpp/examples/example_2d_ppi.cpp)
-add_executable(lidar_example_3d_rhi cpp/examples/example_3d_rhi.cpp)
-add_executable(lidar_run_full_demo  cpp/examples/run_full_demo.cpp)
+add_executable(lidar_example_1d_ray cpp/examples/Example1dRay.cpp)
+add_executable(lidar_example_2d_ppi cpp/examples/Example2dPpi.cpp)
+add_executable(lidar_example_3d_rhi cpp/examples/Example3dRhi.cpp)
+add_executable(lidar_run_full_demo  cpp/examples/RunFullDemo.cpp)
 # run_full_demo 调用 lidar_demo 库 + 子进程串联 stage 1-3, 所以需要链接库
 target_link_libraries(lidar_run_full_demo PRIVATE lidar_demo)
 
 enable_testing()
 
-add_executable(lidar_pipeline_test cpp/tests/test_pipeline.cpp)
+add_executable(lidar_pipeline_test cpp/tests/TestPipeline.cpp)
 target_link_libraries(lidar_pipeline_test PRIVATE lidar_demo)
 
 add_test(
     NAME lidar_pipeline_test
-    COMMAND lidar_pipeline_test ${CMAKE_CURRENT_SOURCE_DIR}/configs/default_pipeline.json
+    COMMAND lidar_pipeline_test ${CMAKE_CURRENT_SOURCE_DIR}/configs/DefaultPipeline.json
 )
 
 # 闭环管理组件测试
-add_executable(lidar_closed_loop_test cpp/tests/test_closed_loop.cpp)
+add_executable(lidar_closed_loop_test cpp/tests/TestClosedLoop.cpp)
 target_link_libraries(lidar_closed_loop_test PRIVATE lidar_client lidar_core)
 
 add_test(
     NAME lidar_closed_loop_test
     COMMAND lidar_closed_loop_test
+)
+
+add_executable(lidar_device_playback_timing_test cpp/tests/TestDevicePlaybackTiming.cpp)
+target_link_libraries(lidar_device_playback_timing_test PRIVATE lidar_server lidar_protocol lidar_core)
+
+add_test(
+    NAME lidar_device_playback_timing_test
+    COMMAND lidar_device_playback_timing_test
+)
+
+add_executable(lidar_client_device_telemetry_test cpp/tests/TestClientDeviceTelemetry.cpp)
+target_link_libraries(lidar_client_device_telemetry_test PRIVATE lidar_client lidar_protocol lidar_core)
+
+add_test(
+    NAME lidar_client_device_telemetry_test
+    COMMAND lidar_client_device_telemetry_test
 )

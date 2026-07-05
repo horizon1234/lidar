@@ -3,13 +3,15 @@
 
 # ---- 客户端静态库 ----
 add_library(lidar_client STATIC
-    src/tcp_client.cpp
-    src/frame_processor.cpp
+    src/TcpClient.cpp
+    src/FrameProcessor.cpp
+    src/DeviceStatusModel.cpp
+    src/ScanCycleMonitor.cpp
     # 闭环管理组件
-    src/alarm_state_machine.cpp
-    src/hotspot_tracker.cpp
-    src/disposal_linkage.cpp
-    src/report_generator.cpp
+    src/AlarmStateMachine.cpp
+    src/HotspotTracker.cpp
+    src/DisposalLinkage.cpp
+    src/ReportGenerator.cpp
 )
 
 target_include_directories(lidar_client PUBLIC
@@ -32,7 +34,7 @@ endif()
 
 # ---- 客户端可执行文件（无头模式）----
 add_executable(lidar_control_client
-    apps/main.cpp
+    apps/LidarControlClient.cpp
 )
 
 target_link_libraries(lidar_control_client PRIVATE
@@ -54,9 +56,9 @@ if(LIDAR_ENABLE_QT)
 
         # 将 Qt UI 源文件加入客户端库
         target_sources(lidar_client PRIVATE
-            src/ppi_widget.cpp
-            src/alarm_panel.cpp
-            src/main_window.cpp
+            src/PpiWidget.cpp
+            src/AlarmPanel.cpp
+            src/MainWindow.cpp
         )
 
         target_compile_definitions(lidar_client PUBLIC LIDAR_ENABLE_QT)
@@ -64,7 +66,7 @@ if(LIDAR_ENABLE_QT)
 
         # GUI 可执行文件
         add_executable(lidar_gui
-            apps/lidar_gui.cpp
+            apps/LidarGui.cpp
         )
         target_link_libraries(lidar_gui PRIVATE
             lidar_client

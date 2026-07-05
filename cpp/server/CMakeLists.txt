@@ -3,8 +3,9 @@
 
 # ---- 服务器静态库 ----
 add_library(lidar_server STATIC
-    src/tcp_server.cpp
-    src/sim_device.cpp
+    src/TcpServer.cpp
+    src/SimDevice.cpp
+    src/DevicePlaybackTiming.cpp
 )
 
 target_include_directories(lidar_server PUBLIC
@@ -27,7 +28,7 @@ endif()
 
 # ---- 服务器可执行文件 ----
 add_executable(lidar_sim_server
-    apps/main.cpp
+    apps/LidarSimServer.cpp
 )
 
 target_link_libraries(lidar_sim_server PRIVATE

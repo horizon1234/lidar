@@ -10,7 +10,7 @@ if(NOT TARGET lidar_core)
 endif()
 
 add_library(lidar_protocol STATIC
-    src/wire_format.cpp
+    src/WireFormat.cpp
 )
 
 target_include_directories(lidar_protocol
