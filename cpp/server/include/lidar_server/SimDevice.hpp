@@ -22,7 +22,7 @@ namespace lidar_server {
  *
  * 所有字段最终会透传给 lidar_core::SimulationConfig，控制整个前向仿真
  * （场景生成 → 射线投射 → 正演信号）的物理与几何参数。下列默认值
- * 对应一个位于北京的假想站点，时间跨度约 24 小时（72 步 × 20 分钟）。
+ * 对应一个位于北京的假想站点，时间跨度约 24 小时（288 步 × 5 分钟）。
  */
 struct SimDeviceConfig {
     // ---- 站点标识 ----
@@ -30,13 +30,13 @@ struct SimDeviceConfig {
     std::string site_name = "Field PM LiDAR Demo Site"; ///< 站点可读名称，推送给客户端作为展示用
     double latitude_deg = 39.9042;         ///< 站点纬度（°），北京天安门附近，用于地理坐标计算
     double longitude_deg = 116.4074;       ///< 站点经度（°），同上
-    std::string instrument_preset = "field_scanning_pm_lidar"; ///< 工地/城市污染扫描 LiDAR 预设
+    std::string instrument_preset = "near_ir_micro_pulse_pm_lidar"; ///< 工地/园区近红外微脉冲 PM LiDAR 预设
     // application_mode 可选值：
     // - construction_site：固定工地/厂区扬尘场景，近地面施工源更强，适合模拟围挡、料场、道路扬尘。
     // - urban_grid：城市网格化固定站场景，交通/区域输送背景更强，适合模拟多站点城市污染巡查。
     // - mobile_mapping：走航车载场景，平台按 vehicle_speed_ms 前进，并叠加近源移动扬尘羽流。
     std::string application_mode = "construction_site";
-    std::string vendor_profile = "raymetrics_pmeye_like";      ///< 公开格式映射 profile
+    std::string vendor_profile = "near_ir_micro_pulse_pm_like"; ///< 工地/园区在售近红外微脉冲 PM 设备 profile
 
     // ---- 仿真可复现性 ----
     int seed = 7;                          ///< 随机数种子，相同种子产生完全相同的仿真数据（可复现性）
@@ -44,9 +44,9 @@ struct SimDeviceConfig {
     // ---- 时间维度 ----
     // 真实设备会 24/7 连续发射与上报；这里的时间维度只定义预生成缓存中“不重复环境状态”的时间轴。
     // 每个 step 代表一次完整采集周期（stare + PPI 扇区扫描），不是单个激光脉冲，也不是单个 TCP 帧。
-    // 默认 72 × 20min 约等于 24h；20min 来自 30s stare + 3 层 PPI × 72 方位 × (5s dwell + 0.25s 转动稳定) + 15s 周期余量。
-    int time_steps = 72;                   ///< 预生成扫描周期数量；服务端播完后循环，模拟全天连续运行
-    int minutes_per_step = 20;             ///< 相邻扫描周期时间戳间隔；应接近一次完整体扫的真实采集耗时
+    // 默认 288 × 5min 约等于 24h；5min 来自 30s stare + 3 层 PPI × 72 方位 × (1s dwell + 0.2s 转动稳定) + 余量。
+    int time_steps = 288;                  ///< 预生成扫描周期数量；服务端播完后循环，模拟全天连续运行
+    int minutes_per_step = 5;              ///< 相邻扫描周期时间戳间隔；应接近一次完整体扫的真实采集耗时
 
     // ---- 距离分辨率（Range Bin）----
     int range_bin_count = 160;             ///< 每条射线的距离 bin 数量，即一条射线被分成多少段
@@ -63,23 +63,23 @@ struct SimDeviceConfig {
     double ppi_azimuth_start_deg = 0.0;    ///< 扇区起始方位角（°）
     double ppi_azimuth_stop_deg = 360.0;   ///< 扇区结束方位角（°）；360 表示完整一圈，内部不会重复 0°
     double ppi_azimuth_step_deg = 5.0;     ///< PPI 扫描的方位角步进（°），0..360 每 5°得到 72 条视线
-    double ppi_line_dwell_s = 5.0;         ///< 每条视线积分/驻留时间（s），20 Hz 下约积分 100 个激光脉冲
-    double ppi_step_overhead_s = 0.25;     ///< 相邻方位/仰角切换、转台稳定、编码器确认的单视线平均额外耗时（s）
-    double ppi_scan_overhead_s = 15.0;     ///< 一轮体扫末尾回扫、状态上报、调度余量（s）
+    double ppi_line_dwell_s = 1.0;         ///< 每条视线积分/驻留时间（s），5 kHz 下约积分 5000 个激光脉冲
+    double ppi_step_overhead_s = 0.2;      ///< 相邻方位/仰角切换、转台稳定、编码器确认的单视线平均额外耗时（s）
+    double ppi_scan_overhead_s = 10.0;     ///< 一轮体扫末尾回扫、状态上报、调度余量（s）
     // 这里的 PRF 是激光发射脉冲频率，不是应用层完整 profile 的上报频率。
-    // Raymetrics PMeye-like UV PM 雷达可用 20 Hz 高能量低 PRF；Halo/StreamLine 等多普勒雷达常见 10~15 kHz 低能量高 PRF。
-    double pulse_repetition_hz = 20.0;     ///< 激光脉冲重复频率（Hz）；每条 profile 通常由 dwell 内多次脉冲平均/积分得到
+    // 工地/园区在售近红外微脉冲 PM 设备常见 kHz 级 PRF；Raymetrics PMeye-like UV 设备是 20 Hz 高能量低 PRF 的另一类产品。
+    double pulse_repetition_hz = 5000.0;   ///< 激光脉冲重复频率（Hz）；每条 profile 通常由 dwell 内多次脉冲平均/积分得到
 
     // ---- 正演物理常数 ----
     // 这些参数直接进入 LiDAR 正演方程：P(r) = C × β(r) / r² × T(r)²
-    double system_constant = 15000000.0;   ///< LiDAR 系统常数 C，综合发射能量、光学效率、接收口径等因素
+    double system_constant = 260000000.0;  ///< LiDAR 系统常数 C，综合发射能量、光学效率、接收口径等因素
     //   ↑ 决定回波信号的绝对量级；值越大，同一大气条件下接收到的信号越强
     double lidar_ratio_sr = 45.0;          ///< 气溶胶激光雷达比（单位 sr），即消光系数与后向散射系数之比
     //   ↑ 典型值 40~60 sr（城市污染气溶胶 ~45 sr）；用于反演时区分气溶胶与分子贡献
-    double wavelength_nm = 355.0;          ///< PM 扫描 LiDAR 常用 UV 弹性通道
-    double pulse_energy_mj = 8.0;          ///< 单脉冲能量均值（mJ）
+    double wavelength_nm = 1064.0;         ///< 工地/园区 PM 监测常见近红外弹性通道（也有 905/910/1550nm 或 532+1064nm）
+    double pulse_energy_mj = 0.5;          ///< 单脉冲能量均值（mJ）；kHz 微脉冲设备通常低于低 PRF 大能量 Nd:YAG
     double pulse_energy_jitter = 0.04;     ///< 脉冲能量相对抖动
-    double background_counts_mean = 120.0; ///< 白天户外背景计数均值
+    double background_counts_mean = 80.0;  ///< 白天户外背景计数均值
     double full_overlap_m = 200.0;         ///< 完整 overlap 距离（m）
 
     // ---- 推送节奏 ----

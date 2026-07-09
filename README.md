@@ -66,7 +66,7 @@ cmake --build build -j$(nproc)
 ./bin/lidar_build_demo_assets --config configs/FieldScanningLidar.json --output-root .
 ```
 
-其中 `CommercialPmeyeSector.json` 用于优先还原商用 PM 扫描 LiDAR 的观测节奏：355 nm 弹性通道、20 Hz PRF、5 s 单视线积分（约 100 shots）、0-180° 扇区、2.5° 方位步进、约 365 s 一轮扇区扫描。其他配置启用更接近现场设备的参数：mJ 级脉冲能量、37.5/30 m 距离门、多仰角体扫、full-overlap、太阳背景、死时间/饱和、风驱动烟羽和 L3 `volume` 体素产品。设计说明见 `docs/realistic_lidar_simulation.md`。
+默认服务端和 `FieldScanningLidar.json` 优先还原工地/园区在售近红外微脉冲 PM LiDAR：1064 nm 弹性通道、kHz 级 PRF、每条视线约 1 s 积分后形成一条 profile，再按分钟级体扫周期上报。`CommercialPmeyeSector.json` 保留 Raymetrics PMeye-like 这一类特定商用 UV 方案：355 nm 弹性通道、20 Hz PRF、5 s 单视线积分（约 100 shots）、0-180° 扇区、2.5° 方位步进。其他配置启用更接近现场设备的参数：37.5/30 m 距离门、多仰角体扫、full-overlap、太阳背景、死时间/饱和、风驱动烟羽和 L3 `volume` 体素产品。设计说明见 `docs/realistic_lidar_simulation.md`。
 
 ## Python 参考入口
 

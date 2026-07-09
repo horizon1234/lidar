@@ -27,9 +27,9 @@ namespace lidar_demo {
  * 为空时退化为旧行为（仅一个仰角），保证向后兼容。
  */
 struct SimulationConfig {
-    std::string instrument_preset = "demo_lidar";              ///< 设备预设：demo_lidar / field_scanning_pm_lidar / ceilometer_profile / mobile_mapping_lidar
+    std::string instrument_preset = "near_ir_micro_pulse_pm_lidar"; ///< 设备预设：demo_lidar / near_ir_micro_pulse_pm_lidar / field_scanning_pm_lidar / ceilometer_profile / mobile_mapping_lidar
     std::string application_mode = "legacy_demo";              ///< 应用场景：legacy_demo / construction_site / urban_grid / mobile_mapping
-    std::string vendor_profile = "generic_jsonl";              ///< 公开格式映射：generic_jsonl / vaisala_cl61_like / raymetrics_pmeye_like / halo_hpl_like
+    std::string vendor_profile = "near_ir_micro_pulse_pm_like"; ///< 公开格式映射：generic_jsonl / near_ir_micro_pulse_pm_like / vaisala_cl61_like / raymetrics_pmeye_like / halo_hpl_like
     int seed = 7;                          ///< 随机数种子（决定可复现性）
     int time_steps = 18;                   ///< 仿真的时间步数量
     int minutes_per_step = 20;            ///< 相邻时间步的间隔（分钟）
@@ -49,11 +49,11 @@ struct SimulationConfig {
     double ppi_line_dwell_s = 1.0;        ///< 每条视线的积分/驻留时间（s），商用 PM 扫描雷达常见量级为秒到十秒
     double ppi_step_overhead_s = 0.0;     ///< 相邻方位/仰角切换、转台稳定、编码器确认的单视线平均耗时（s）
     double ppi_scan_overhead_s = 0.0;      ///< 一次扫描周期的转台回零、状态上报等额外耗时（s）
-    double pulse_repetition_hz = 20.0;     ///< 激光脉冲重复频率（Hz），是激光 shot 频率，不是完整 profile 上报频率
+    double pulse_repetition_hz = 5000.0;  ///< 激光脉冲重复频率（Hz），是激光 shot 频率，不是完整 profile 上报频率
     double system_constant = 260000000.0; ///< LiDAR 系统常数 C（正演发射方程用）
     double lidar_ratio_sr = 45.0;         ///< 气溶胶激光雷达比（sr，消光后向散射比）
-    double wavelength_nm = 532.0;         ///< 激光波长（nm），PM 扫描雷达常用 355nm，云高仪常用 905/910nm
-    double pulse_energy_mj = 1.0;         ///< 单脉冲能量均值（mJ），用于仿真每条射线的能量抖动
+    double wavelength_nm = 1064.0;        ///< 激光波长（nm），工地/园区 PM 常见 905/910/1064/1550nm，也有 532+1064nm 双波长
+    double pulse_energy_mj = 0.5;         ///< 单脉冲能量均值（mJ），用于仿真每条射线的能量抖动
     double pulse_energy_jitter = 0.03;    ///< 脉冲能量相对抖动（1 sigma）
     double background_counts_mean = 10.5; ///< 背景/暗计数均值（计数）
     double background_counts_jitter = 0.5;///< 背景计数随机扰动（1 sigma）

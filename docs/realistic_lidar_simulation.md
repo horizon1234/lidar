@@ -15,15 +15,16 @@
 
 - Vaisala CL61 / BL-View：910.55 nm、4.8 m 分辨率、NetCDF L1/L2/L3、云/降水过滤、live/archive 显示。
 - HALO Photonics StreamLine：扫描队列、GPS 同步、多种扫描模式、长距离 Doppler LiDAR。
-- Raymetrics PMeye：面向 PM2.5/PM10、3D 扫描、full overlap、远程实时监测和污染源定位。
+- 近红外微脉冲 PM LiDAR：国内工地/园区颗粒物监测更常见 905/910/1064/1550 nm 或 532+1064 nm 路线，kHz 级 PRF，分钟级平均/体扫产品。
+- Raymetrics PMeye：面向 PM2.5/PM10、3D 扫描、full overlap、远程实时监测和污染源定位，属于 355 nm/20 Hz 高能低 PRF 的特定商用 UV 方案。
 
 ## 2. 本项目采用的仿真策略
 
 为了兼顾“逼真”和“本机可实时演示”，项目不直接模拟真实设备的最细粒度原始采样，而是采用工程折中：
 
-- 固定站/工地模式：6 km 量程，37.5 m 距离门，10 度方位步进，6 个低/中仰角体扫。
+- 固定站/工地模式：6 km 量程，37.5 m 距离门，近红外微脉冲，kHz 级 PRF，多仰角 PPI 体扫。
 - 走航车模式：3.6 km 量程，30 m 距离门，低仰角优先，车辆速度进入污染场坐标。
-- 波长默认 355 nm，面向 PM 扫描 LiDAR 的弹性通道。
+- 波长默认 1064 nm，面向工地/园区在售近红外 PM 监测设备；`CommercialPmeyeSector.json` 单独保留 355 nm PMeye-like 参考。
 - 单脉冲能量、背景计数、full overlap、死时间、ADC 饱和均进入配置。
 
 新增配置：
