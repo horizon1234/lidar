@@ -66,6 +66,7 @@ struct SimDeviceConfig {
     double ppi_line_dwell_s = 1.0;         ///< 每条视线积分/驻留时间（s），5 kHz 下约积分 5000 个激光脉冲
     double ppi_step_overhead_s = 0.2;      ///< 相邻方位/仰角切换、转台稳定、编码器确认的单视线平均额外耗时（s）
     double ppi_scan_overhead_s = 10.0;     ///< 一轮体扫末尾回扫、状态上报、调度余量（s）
+    double stare_dwell_s = 30.0;           ///< 垂直凝视积分时间（s），用于近地面/边界层反演锚定
     // 这里的 PRF 是激光发射脉冲频率，不是应用层完整 profile 的上报频率。
     // 工地/园区在售近红外微脉冲 PM 设备常见 kHz 级 PRF；Raymetrics PMeye-like UV 设备是 20 Hz 高能量低 PRF 的另一类产品。
     double pulse_repetition_hz = 5000.0;   ///< 激光脉冲重复频率（Hz）；每条 profile 通常由 dwell 内多次脉冲平均/积分得到
@@ -83,7 +84,7 @@ struct SimDeviceConfig {
     double full_overlap_m = 200.0;         ///< 完整 overlap 距离（m）
 
     // ---- 推送节奏 ----
-    double playback_time_scale = 100.0;    ///< 播放加速倍率；1.0 表示按真实采集耗时推送，100.0 表示 100 倍加速演示
+    double playback_time_scale = 1.0;      ///< 播放加速倍率；1.0 表示按真实采集耗时推送
     int inter_frame_delay_ms = 0;          ///< 兼容旧入口的固定帧间隔覆盖；0 表示按 dwell/playback_time_scale 自动计算
 };
 

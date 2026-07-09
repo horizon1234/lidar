@@ -11,11 +11,13 @@
  * 用法：
  *   lidar_sim_server [port] [step_delay_ms] [playback_time_scale]
  *
- * 默认端口 19850，默认 100 倍加速播放真实采集节奏，不额外插入步间延迟。
+ * 默认端口 19850，默认按真实采集节奏播放，不额外插入步间延迟。
  */
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <csignal>
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -35,7 +37,7 @@ void signal_handler(int /*sig*/) {
 int main(int argc, char* argv[]) {
     std::uint16_t port = 19850;
     int step_delay_ms = 0; // 额外步间延迟；0 表示完全由真实采集耗时/playback_time_scale 控制
-    double playback_time_scale = 100.0;
+    double playback_time_scale = 1.0;
 
     if (argc >= 2) {
         port = static_cast<std::uint16_t>(std::stoi(argv[1]));
@@ -136,7 +138,7 @@ int main(int argc, char* argv[]) {
         // ① 能力状态帧：设备型号、协议、通道、扫描模式、量程、分辨率等。
         server.send_line(device.status_frame(current_step).to_json_line());
 
-        // 逐时间步推送：默认 PMeye-like 体扫配置约 218 条核心帧
+        // 逐时间步推送：默认近红外微脉冲 PM 体扫配置约 218 条核心帧
         // （1 条 zenith stare + 3 层 × 72 方位 PPI lidar_raw + 1 条 ground_obs）。
         // 若修改仰角/扇区/步进，实际帧数由 SimDeviceConfig 动态决定。
         // ②③ 的数据都由 produce_scan_cycle() 从缓存中取出并封装为帧
@@ -157,15 +159,26 @@ int main(int argc, char* argv[]) {
             //   ④ ground_obs：1 条地面观测，含地面 PM2.5/PM10/T/RH/风速风向
             //      数据来源：仿真地面模型生成，存于 ground_measurements_ 缓存
             auto frames = device.produce_scan_cycle(step);
+            bool scan_overhead_waited = false;
             for (const auto& frame : frames) {
+                if (frame.type != lidar_protocol::FrameType::lidar_raw && !scan_overhead_waited
+                    && device.config().ppi_scan_overhead_s > 0.0
+                    && device.config().playback_time_scale > 0.0) {
+                    int overhead_ms = std::max(1, static_cast<int>(std::round(
+                        device.config().ppi_scan_overhead_s * 1000.0
+                        / device.config().playback_time_scale)));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(overhead_ms));
+                    scan_overhead_waited = true;
+                }
+
+                int frame_delay = lidar_server::playback_delay_ms_for_frame(device.config(), frame);
+                // 真实设备通常在完成该条视线的积分/平均后才上报 profile。
+                if (frame_delay > 0) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(frame_delay));
+                }
                 if (!server.send_line(frame.to_json_line())) {
                     std::cerr << "[server] Send failed, client may have disconnected.\n";
                     break;
-                }
-                int frame_delay = lidar_server::playback_delay_ms_for_frame(device.config(), frame);
-                // 按真实积分时间经 playback_time_scale 加速后的间隔推送。
-                if (frame_delay > 0) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(frame_delay));
                 }
             }
 

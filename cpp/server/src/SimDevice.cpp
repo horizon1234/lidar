@@ -7,13 +7,70 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <ctime>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <set>
+#include <sstream>
 #include <thread>
 
 namespace lidar_server {
+
+namespace {
+
+std::tm safe_localtime(std::time_t value) {
+    std::tm result{};
+#ifdef _WIN32
+    localtime_s(&result, &value);
+#else
+    localtime_r(&value, &result);
+#endif
+    return result;
+}
+
+bool parse_cycle_timestamp(const std::string& text, std::time_t& output) {
+    std::tm stamp{};
+    std::istringstream input(text);
+    input >> std::get_time(&stamp, "%Y-%m-%dT%H:%M:%S");
+    if (input.fail()) {
+        input.clear();
+        input.str(text);
+        stamp = std::tm{};
+        input >> std::get_time(&stamp, "%Y-%m-%dT%H:%M");
+    }
+    if (input.fail()) {
+        return false;
+    }
+    stamp.tm_isdst = -1;
+    output = std::mktime(&stamp);
+    return output != static_cast<std::time_t>(-1);
+}
+
+std::string timestamp_with_offset(const std::string& cycle_timestamp, double offset_s) {
+    std::time_t cycle_time{};
+    if (!parse_cycle_timestamp(cycle_timestamp, cycle_time)) {
+        return cycle_timestamp;
+    }
+
+    long long total_ms = static_cast<long long>(cycle_time) * 1000LL
+        + static_cast<long long>(std::llround(std::max(offset_s, 0.0) * 1000.0));
+    std::time_t seconds = static_cast<std::time_t>(total_ms / 1000LL);
+    int millis = static_cast<int>(total_ms % 1000LL);
+    if (millis < 0) {
+        millis += 1000;
+        --seconds;
+    }
+
+    std::tm stamp = safe_localtime(seconds);
+    std::ostringstream output;
+    output << std::put_time(&stamp, "%Y-%m-%dT%H:%M:%S")
+           << '.' << std::setw(3) << std::setfill('0') << millis;
+    return output.str();
+}
+
+} // namespace
 
 SimDevice::SimDevice(const SimDeviceConfig& config)
     : config_(config) {
@@ -196,31 +253,51 @@ std::vector<lidar_protocol::Frame> SimDevice::produce_scan_cycle(int step_index)
     //      - 分子场：molecular_backscatter[N]、molecular_extinction[N]（Rayleigh 散射背景）
     //      - 真值场（仅仿真有）：true_backscatter/extinction/pm25/pm10/hotspot_mask[N]
     int ray_index = 0;
+    double elapsed_s = 0.0;
     for (const auto& profile : profiles) {
+        int current_ray_index = ray_index++;
+        double dwell_s = profile.scan_mode == "stare"
+            ? config_.stare_dwell_s
+            : config_.ppi_line_dwell_s;
+        double movement_s = profile.scan_mode == "stare"
+            ? 0.0
+            : config_.ppi_step_overhead_s;
+        double acquisition_start_s = elapsed_s;
+        double acquisition_end_s = acquisition_start_s + std::max(dwell_s, 0.0);
+        double publish_offset_s = acquisition_end_s + std::max(movement_s, 0.0);
+
         lidar_core::Json payload = lidar_protocol::profile_to_json(profile);
         payload["sequence_id"] = next_sequence_id_++;
         payload["frame_id"] = profile.scan_id;
         payload["scan_cycle_id"] = scan_cycle_id;
-        payload["ray_index"] = ray_index++;
+        payload["scan_cycle_timestamp"] = timestamp;
+        payload["ray_index"] = current_ray_index;
         payload["rays_in_cycle"] = rays_in_cycle;
+        payload["acquisition_start_offset_s"] = acquisition_start_s;
+        payload["acquisition_end_offset_s"] = acquisition_end_s;
+        payload["publish_offset_s"] = publish_offset_s;
+        payload["acquisition_start_timestamp"] = timestamp_with_offset(timestamp, acquisition_start_s);
+        payload["acquisition_end_timestamp"] = timestamp_with_offset(timestamp, acquisition_end_s);
+        payload["publish_timestamp"] = timestamp_with_offset(timestamp, publish_offset_s);
         payload["channel_id"] = "elastic_" + std::to_string(static_cast<int>(std::round(config_.wavelength_nm))) + "nm";
         payload["detector_mode"] = "hybrid_photon_analog";
         payload["range_resolution_m"] = config_.range_bin_m;
         payload["wavelength_nm"] = config_.wavelength_nm;
         payload["full_overlap_m"] = config_.full_overlap_m;
         payload["pulse_repetition_hz"] = config_.pulse_repetition_hz;
-        payload["line_dwell_s"] = config_.ppi_line_dwell_s;
+        payload["line_dwell_s"] = dwell_s;
+        payload["motion_overhead_s"] = movement_s;
         payload["ppi_step_overhead_s"] = config_.ppi_step_overhead_s;
-        payload["integrated_pulses"] = static_cast<int>(std::round(config_.pulse_repetition_hz * config_.ppi_line_dwell_s));
+        payload["integrated_pulses"] = static_cast<int>(std::round(config_.pulse_repetition_hz * dwell_s));
         payload["signal_unit"] = "counts";
         payload["range_unit"] = "m";
-        payload["azimuth_encoder_deg"] = profile.azimuth_deg + 0.015 * std::sin(static_cast<double>(step_index + ray_index));
-        payload["elevation_encoder_deg"] = profile.elevation_deg + 0.01 * std::cos(static_cast<double>(step_index + ray_index));
+        payload["azimuth_encoder_deg"] = profile.azimuth_deg + 0.015 * std::sin(static_cast<double>(step_index + current_ray_index));
+        payload["elevation_encoder_deg"] = profile.elevation_deg + 0.01 * std::cos(static_cast<double>(step_index + current_ray_index));
         payload["integration_pulses"] = profile.scan_mode == "stare"
-            ? static_cast<int>(std::round(config_.pulse_repetition_hz * 30.0))
+            ? static_cast<int>(std::round(config_.pulse_repetition_hz * config_.stare_dwell_s))
             : static_cast<int>(std::round(config_.pulse_repetition_hz * config_.ppi_line_dwell_s));
         payload["accumulation_time_ms"] = profile.scan_mode == "stare"
-            ? 30000
+            ? static_cast<int>(std::round(config_.stare_dwell_s * 1000.0))
             : static_cast<int>(std::round(config_.ppi_line_dwell_s * 1000.0));
         payload["instrument_preset"] = config_.instrument_preset;
         payload["application_mode"] = config_.application_mode;
@@ -235,6 +312,7 @@ std::vector<lidar_protocol::Frame> SimDevice::produce_scan_cycle(int step_index)
             timestamp,
             std::move(payload)
         ));
+        elapsed_s = publish_offset_s;
     }
 
     // ③ ground_obs 帧：共址地面站观测，用于 PM 浓度的地面校准与验证
@@ -244,6 +322,11 @@ std::vector<lidar_protocol::Frame> SimDevice::produce_scan_cycle(int step_index)
     if (step_index < static_cast<int>(ground_measurements_.size())
         && !ground_measurements_[step_index].timestamp.empty()) {
         lidar_core::Json ground_payload = lidar_protocol::ground_to_json(ground_measurements_[step_index]);
+        double cycle_end_s = elapsed_s + std::max(config_.ppi_scan_overhead_s, 0.0);
+        ground_payload["scan_cycle_id"] = scan_cycle_id;
+        ground_payload["scan_cycle_timestamp"] = timestamp;
+        ground_payload["observation_timestamp"] = timestamp_with_offset(timestamp, cycle_end_s);
+        ground_payload["observation_offset_s"] = cycle_end_s;
         frames.push_back(lidar_protocol::make_frame(
             lidar_protocol::FrameType::ground_obs,
             timestamp,
@@ -301,7 +384,9 @@ lidar_protocol::Frame SimDevice::status_frame(int step_index) const {
         {"ppi_line_dwell_s", config_.ppi_line_dwell_s},
         {"ppi_step_overhead_s", config_.ppi_step_overhead_s},
         {"ppi_scan_overhead_s", config_.ppi_scan_overhead_s},
+        {"stare_dwell_s", config_.stare_dwell_s},
         {"ppi_scan_cycle_s", sim_config_.ppi_scan_cycle_seconds()},
+        {"full_scan_cycle_s", config_.stare_dwell_s + sim_config_.ppi_scan_cycle_seconds()},
         {"playback_time_scale", config_.playback_time_scale},
         {"wavelength_nm", config_.wavelength_nm},
         {"pulse_repetition_hz", config_.pulse_repetition_hz},
@@ -352,9 +437,11 @@ lidar_protocol::Frame SimDevice::telemetry_frame(int step_index) const {
     payload["laser_energy_jitter"] = config_.pulse_energy_jitter;
     int rays_per_scan = static_cast<int>(sim_config_.effective_ppi_elevations_deg().size()
         * sim_config_.effective_ppi_azimuths_deg().size());
+    double shots_per_cycle = config_.pulse_repetition_hz
+        * (config_.stare_dwell_s
+            + static_cast<double>(std::max(rays_per_scan, 1)) * config_.ppi_line_dwell_s);
     payload["laser_shots_total"] = static_cast<int>(std::round(
-        static_cast<double>(safe_step * std::max(rays_per_scan, 1))
-        * config_.pulse_repetition_hz * config_.ppi_line_dwell_s));
+        static_cast<double>(safe_step) * shots_per_cycle));
     payload["fan_state"] = std::string(enclosure_temp_c > 33.0 ? "high" : "normal");
     payload["door_state"] = "closed";
     payload["wiper_state"] = std::string(precipitation ? "active" : "idle");

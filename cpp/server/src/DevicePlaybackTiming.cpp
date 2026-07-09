@@ -24,7 +24,7 @@ double acquisition_seconds_for_frame(
     }
 
     if (payload_scan_mode_is(frame, "stare")) {
-        return 30.0;
+        return std::max(config.stare_dwell_s, 0.0);
     }
 
     return std::max(config.ppi_line_dwell_s, 0.0)

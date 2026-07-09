@@ -39,7 +39,9 @@ int main() {
                 {"ppi_azimuth_step_deg", 2.5},
                 {"ppi_line_dwell_s", 5.0},
                 {"ppi_step_overhead_s", 0.25},
+                {"stare_dwell_s", 30.0},
                 {"ppi_scan_cycle_s", 365.0},
+                {"full_scan_cycle_s", 395.0},
                 {"pulse_repetition_hz", 20.0},
                 {"integrated_pulses_per_line", 100},
                 {"playback_time_scale", 100.0},
@@ -53,6 +55,10 @@ int main() {
                 "Line dwell should parse");
         require(status.snapshot().ppi_step_overhead_s == 0.25,
                 "PPI movement overhead should parse");
+        require(status.snapshot().stare_dwell_s == 30.0,
+                "Stare dwell should parse");
+        require(status.snapshot().full_scan_cycle_s == 395.0,
+                "Full scan cycle should parse");
 
         auto telemetry_frame = lidar_protocol::make_frame(
             lidar_protocol::FrameType::status,
@@ -69,6 +75,8 @@ int main() {
                 "Telemetry status must preserve PRF");
         require(status.snapshot().ppi_step_overhead_s == 0.25,
                 "Telemetry status must preserve movement overhead");
+        require(status.snapshot().full_scan_cycle_s == 395.0,
+                "Telemetry status must preserve full cycle seconds");
 
         lidar_client::ScanCycleMonitor monitor;
         monitor.observe_frame(raw_frame(0));

@@ -27,6 +27,8 @@
 - 波长默认 1064 nm，面向工地/园区在售近红外 PM 监测设备；`CommercialPmeyeSector.json` 单独保留 355 nm PMeye-like 参考。
 - 单脉冲能量、背景计数、full overlap、死时间、ADC 饱和均进入配置。
 
+边界说明：这些参数是根据公开采购指标、公开产品资料和通用大气 LiDAR 工程经验抽象出的默认值；在没有具体厂商 datasheet、上位机协议和实测 raw 样例前，不应声称为某一台在售设备的逐字段复刻。
+
 新增配置：
 
 - `configs/FieldScanningLidar.json`：工地/城市固定扫描站。

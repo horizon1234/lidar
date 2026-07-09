@@ -200,10 +200,10 @@ make server client      # Makefile 方式，输出到 bin/
 
 | 程序 | 参数 | 默认值 | 说明 |
 |------|------|--------|------|
-| `lidar_sim_server` | `[port] [step_delay_ms] [playback_time_scale]` | `19850 500 100` | 监听端口、时间步间隔、真实采集节奏播放倍率 |
+| `lidar_sim_server` | `[port] [step_delay_ms] [playback_time_scale]` | `19850 0 1` | 监听端口、额外时间步间隔、真实采集节奏播放倍率 |
 | `lidar_control_client` | `[host] [port] [output_dir]` | `127.0.0.1 19850 data/client_output` | 连接地址、端口、输出目录 |
 
-`playback_time_scale=1` 表示按设备真实积分节奏推送；默认 `100` 会把 5 s 单视线积分压缩为约 50 ms，便于本地演示。
+`playback_time_scale=1` 表示按设备真实积分节奏推送；默认即为真实速度。当前默认先做 30 s 垂直凝视，再按约 1.2 s/条推送 PPI profile。需要快速演示时，可手动传入 `100`。
 
 ### 闭环管理组件
 

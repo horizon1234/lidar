@@ -86,8 +86,14 @@ bool DeviceStatusModel::update_from_frame(const lidar_protocol::Frame& frame) {
     if (frame.payload.contains("ppi_step_overhead_s")) {
         snapshot_.ppi_step_overhead_s = get_number(frame.payload, "ppi_step_overhead_s");
     }
+    if (frame.payload.contains("stare_dwell_s")) {
+        snapshot_.stare_dwell_s = get_number(frame.payload, "stare_dwell_s");
+    }
     if (frame.payload.contains("ppi_scan_cycle_s")) {
         snapshot_.ppi_scan_cycle_s = get_number(frame.payload, "ppi_scan_cycle_s");
+    }
+    if (frame.payload.contains("full_scan_cycle_s")) {
+        snapshot_.full_scan_cycle_s = get_number(frame.payload, "full_scan_cycle_s");
     }
     if (frame.payload.contains("playback_time_scale")) {
         snapshot_.playback_time_scale = get_number(frame.payload, "playback_time_scale", 1.0);
@@ -119,7 +125,9 @@ lidar_core::Json DeviceStatusModel::to_json() const {
         {"ppi_azimuth_step_deg", snapshot_.ppi_azimuth_step_deg},
         {"ppi_line_dwell_s", snapshot_.ppi_line_dwell_s},
         {"ppi_step_overhead_s", snapshot_.ppi_step_overhead_s},
+        {"stare_dwell_s", snapshot_.stare_dwell_s},
         {"ppi_scan_cycle_s", snapshot_.ppi_scan_cycle_s},
+        {"full_scan_cycle_s", snapshot_.full_scan_cycle_s},
         {"playback_time_scale", snapshot_.playback_time_scale},
         {"pulse_repetition_hz", snapshot_.pulse_repetition_hz},
         {"integrated_pulses_per_line", snapshot_.integrated_pulses_per_line},
@@ -136,12 +144,13 @@ std::string DeviceStatusModel::brief() const {
     output << snapshot_.device_model
            << " vendor=" << snapshot_.vendor_profile
            << " PRF=" << snapshot_.pulse_repetition_hz << "Hz"
+           << " stare=" << snapshot_.stare_dwell_s << "s"
            << " dwell=" << snapshot_.ppi_line_dwell_s << "s"
            << " move=" << snapshot_.ppi_step_overhead_s << "s"
            << " sector=" << snapshot_.ppi_azimuth_start_deg
            << "-" << snapshot_.ppi_azimuth_stop_deg
            << " step=" << snapshot_.ppi_azimuth_step_deg
-           << " cycle=" << snapshot_.ppi_scan_cycle_s << "s"
+           << " cycle=" << snapshot_.full_scan_cycle_s << "s"
            << " playback=x" << snapshot_.playback_time_scale;
     return output.str();
 }
