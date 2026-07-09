@@ -31,7 +31,11 @@ struct SimDeviceConfig {
     double latitude_deg = 39.9042;         ///< 站点纬度（°），北京天安门附近，用于地理坐标计算
     double longitude_deg = 116.4074;       ///< 站点经度（°），同上
     std::string instrument_preset = "field_scanning_pm_lidar"; ///< 工地/城市污染扫描 LiDAR 预设
-    std::string application_mode = "construction_site";        ///< construction_site / urban_grid / mobile_mapping
+    // application_mode 可选值：
+    // - construction_site：固定工地/厂区扬尘场景，近地面施工源更强，适合模拟围挡、料场、道路扬尘。
+    // - urban_grid：城市网格化固定站场景，交通/区域输送背景更强，适合模拟多站点城市污染巡查。
+    // - mobile_mapping：走航车载场景，平台按 vehicle_speed_ms 前进，并叠加近源移动扬尘羽流。
+    std::string application_mode = "construction_site";
     std::string vendor_profile = "raymetrics_pmeye_like";      ///< 公开格式映射 profile
 
     // ---- 仿真可复现性 ----
