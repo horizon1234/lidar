@@ -2,9 +2,9 @@
  * @file sim_device.hpp
  * @brief 仿真 LiDAR 设备：按配置生成周期性扫描帧流。
  *
- * SimDevice 在初始化时一次性生成完整的仿真战役数据（通过调用
- * lidar_core::run_end_to_end 触发内部前向仿真），缓存所有原始射线，
- * 然后通过 produce_scan_cycle() 逐时间步产出帧。
+ * SimDevice 在初始化时一次性生成约 24 小时的仿真战役数据（通过调用
+ * lidar_core::run_end_to_end 触发内部前向仿真），缓存所有原始射线。
+ * 服务端随后按采集节奏循环调用 produce_scan_cycle()，模拟设备 24/7 连续上报。
  */
 #pragma once
 
@@ -22,7 +22,7 @@ namespace lidar_server {
  *
  * 所有字段最终会透传给 lidar_core::SimulationConfig，控制整个前向仿真
  * （场景生成 → 射线投射 → 正演信号）的物理与几何参数。下列默认值
- * 对应一个位于北京的假想站点，时间跨度约 6 小时（18 步 × 20 分钟）。
+ * 对应一个位于北京的假想站点，时间跨度约 24 小时（206 步 × 7 分钟）。
  */
 struct SimDeviceConfig {
     // ---- 站点标识 ----
@@ -42,8 +42,11 @@ struct SimDeviceConfig {
     int seed = 7;                          ///< 随机数种子，相同种子产生完全相同的仿真数据（可复现性）
 
     // ---- 时间维度 ----
-    int time_steps = 18;                   ///< 仿真总时间步数；每步代表一次完整的扫描周期
-    int minutes_per_step = 20;             ///< 相邻时间步之间的真实时间间隔（分钟），决定时间序列分辨率
+    // 真实设备会 24/7 连续发射与上报；这里的时间维度只定义预生成缓存中“不重复环境状态”的时间轴。
+    // 每个 step 代表一次完整采集周期（stare + PPI 扇区扫描），不是单个激光脉冲，也不是单个 TCP 帧。
+    // 默认 206 × 7min 约等于 24h；7min 来自默认 30s stare + 73 条 PPI 视线 × 5s dwell ≈ 6.6min 的分钟级近似。
+    int time_steps = 206;                  ///< 预生成扫描周期数量；服务端播完后循环，模拟全天连续运行
+    int minutes_per_step = 7;              ///< 相邻扫描周期时间戳间隔；应接近一次完整体扫的真实采集耗时
 
     // ---- 距离分辨率（Range Bin）----
     int range_bin_count = 160;             ///< 每条射线的距离 bin 数量，即一条射线被分成多少段
@@ -75,7 +78,7 @@ struct SimDeviceConfig {
     double full_overlap_m = 200.0;         ///< 完整 overlap 距离（m）
 
     // ---- 推送节奏 ----
-    double playback_time_scale = 100.0;    ///< 播放加速倍率；1.0 表示按真实 5s dwell 推送，100.0 表示 100 倍加速
+    double playback_time_scale = 100.0;    ///< 播放加速倍率；1.0 表示按真实采集耗时推送，100.0 表示 100 倍加速演示
     int inter_frame_delay_ms = 0;          ///< 兼容旧入口的固定帧间隔覆盖；0 表示按 dwell/playback_time_scale 自动计算
 };
 
@@ -85,7 +88,7 @@ struct SimDeviceConfig {
  * 工作模式：
  *   1. 构造时调用 init() 一次性生成全部仿真数据并缓存
  *   2. produce_scan_cycle(step) 按时间步索引返回该步的所有帧
- *   3. 客户端按步索引循环调用，实现周期性数据推送
+ *   3. 客户端按步索引循环调用，实现全天连续数据推送；超过缓存末尾后从第 0 步重播
  */
 class SimDevice {
 public:

@@ -227,12 +227,12 @@ bool test_report_generation() {
     rconfig.site_name = "Test Site";
     ReportGenerator report_gen(rconfig);
 
-    // 模拟3个时间步
+    // 模拟3个时间步，10 分钟间隔，用于验证报表按时间戳推导周期长度。
     for (int i = 0; i < 3; ++i) {
-        std::string ts = "2026-01-01T10:" + std::to_string(i * 5).substr(0, 2);
+        std::string ts = "2026-01-01T10:" + std::to_string(i * 10).substr(0, 2);
         if (i == 0) ts = "2026-01-01T10:00";
-        else if (i == 1) ts = "2026-01-01T10:05";
-        else ts = "2026-01-01T10:10";
+        else if (i == 1) ts = "2026-01-01T10:10";
+        else ts = "2026-01-01T10:20";
 
         std::vector<Hotspot> hots = {
             make_hotspot("hs-1", ts, 55.0 + i * 5, 100.0 + i, 200.0, 50.0),
@@ -273,6 +273,8 @@ bool test_report_generation() {
     // 验证步骤数
     CHECK(json_report.at("steps").array_items().size() == 3,
           "should have 3 steps in report");
+    CHECK(std::abs(json_report.at("summary").at("estimated_duration_minutes").number_value() - 30.0) < 1e-9,
+          "estimated duration should follow timestamp cadence");
 
     // 文本报表
     std::string text = report_gen.generate_text_report(tracker, linkage);

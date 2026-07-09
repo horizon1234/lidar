@@ -11,7 +11,7 @@
  * 用法：
  *   lidar_sim_server [port] [step_delay_ms] [playback_time_scale]
  *
- * 默认端口 19850，默认 100 倍加速播放真实采集节奏。
+ * 默认端口 19850，默认 100 倍加速播放真实采集节奏，不额外插入步间延迟。
  */
 #include <atomic>
 #include <chrono>
@@ -34,7 +34,7 @@ void signal_handler(int /*sig*/) {
 
 int main(int argc, char* argv[]) {
     std::uint16_t port = 19850;
-    int step_delay_ms = 500; // 每个时间步之间的间隔
+    int step_delay_ms = 0; // 额外步间延迟；0 表示完全由真实采集耗时/playback_time_scale 控制
     double playback_time_scale = 100.0;
 
     if (argc >= 2) {
@@ -180,7 +180,7 @@ int main(int argc, char* argv[]) {
                 server.send_line(heartbeat.to_json_line());
             }
 
-            // 时间步间隔（默认 500ms），区分不同时间步的节奏
+            // 可选额外步间隔；真实采集节奏已由每条 raw 帧的 dwell/playback_time_scale 表达。
             if (step_delay_ms > 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(step_delay_ms));
             }

@@ -6,10 +6,50 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 #include <sstream>
 #include <iomanip>
 
 namespace lidar_client {
+
+namespace {
+
+bool parse_report_timestamp(const std::string& text, std::time_t& output) {
+    std::tm stamp{};
+    std::istringstream input(text);
+    input >> std::get_time(&stamp, "%Y-%m-%dT%H:%M");
+    if (input.fail()) {
+        return false;
+    }
+    stamp.tm_isdst = -1;
+    output = std::mktime(&stamp);
+    return output != static_cast<std::time_t>(-1);
+}
+
+double estimate_duration_minutes_from_timestamps(
+    const std::vector<StepResultSummary>& steps) {
+    if (steps.size() < 2) {
+        return 0.0;
+    }
+
+    std::time_t first{};
+    std::time_t last{};
+    if (!parse_report_timestamp(steps.front().timestamp, first)
+        || !parse_report_timestamp(steps.back().timestamp, last)) {
+        return 0.0;
+    }
+
+    double span_minutes = std::difftime(last, first) / 60.0;
+    if (span_minutes < 0.0) {
+        return 0.0;
+    }
+
+    // 首尾时间戳描述的是各扫描周期的开始时刻；补上最后一个周期的平均跨度。
+    double average_step_minutes = span_minutes / static_cast<double>(steps.size() - 1);
+    return span_minutes + average_step_minutes;
+}
+
+} // namespace
 
 // =========================================================================
 // ReportGenerator
@@ -45,8 +85,8 @@ ReportGenerator::AggregateStats ReportGenerator::compute_stats(
         stats.avg_pm25_all_steps = pm25_sum / pm25_count;
     }
 
-    // 时间跨度估算（每步约 5 分钟）
-    stats.total_duration_minutes = stats.total_steps * 5.0;
+    // 时间跨度估算：根据设备帧时间戳推导，避免客户端硬编码扫描周期。
+    stats.total_duration_minutes = estimate_duration_minutes_from_timestamps(step_results_);
 
     // 事件统计
     stats.total_events = static_cast<int>(tracker.events().size());
