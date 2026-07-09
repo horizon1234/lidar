@@ -82,6 +82,7 @@ PipelineConfig parse_pipeline_config(const Json& value) {
     config.simulation.ppi_azimuth_stop_deg = simulation.contains("ppi_azimuth_stop_deg") ? simulation.at("ppi_azimuth_stop_deg").number_value() : config.simulation.ppi_azimuth_stop_deg;
     config.simulation.ppi_azimuth_step_deg = simulation.at("ppi_azimuth_step_deg").number_value();
     config.simulation.ppi_line_dwell_s = simulation.contains("ppi_line_dwell_s") ? simulation.at("ppi_line_dwell_s").number_value() : config.simulation.ppi_line_dwell_s;
+    config.simulation.ppi_step_overhead_s = simulation.contains("ppi_step_overhead_s") ? simulation.at("ppi_step_overhead_s").number_value() : config.simulation.ppi_step_overhead_s;
     config.simulation.ppi_scan_overhead_s = simulation.contains("ppi_scan_overhead_s") ? simulation.at("ppi_scan_overhead_s").number_value() : config.simulation.ppi_scan_overhead_s;
     config.simulation.pulse_repetition_hz = simulation.contains("pulse_repetition_hz") ? simulation.at("pulse_repetition_hz").number_value() : config.simulation.pulse_repetition_hz;
     config.simulation.system_constant = simulation.at("system_constant").number_value();

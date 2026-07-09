@@ -38,6 +38,7 @@ int main() {
                 {"vendor_profile", "raymetrics_pmeye_like"},
                 {"ppi_azimuth_step_deg", 2.5},
                 {"ppi_line_dwell_s", 5.0},
+                {"ppi_step_overhead_s", 0.25},
                 {"ppi_scan_cycle_s", 365.0},
                 {"pulse_repetition_hz", 20.0},
                 {"integrated_pulses_per_line", 100},
@@ -50,6 +51,8 @@ int main() {
                 "Integrated pulses should parse");
         require(status.snapshot().ppi_line_dwell_s == 5.0,
                 "Line dwell should parse");
+        require(status.snapshot().ppi_step_overhead_s == 0.25,
+                "PPI movement overhead should parse");
 
         auto telemetry_frame = lidar_protocol::make_frame(
             lidar_protocol::FrameType::status,
@@ -64,6 +67,8 @@ int main() {
                 "Telemetry status must not erase device capabilities");
         require(status.snapshot().pulse_repetition_hz == 20.0,
                 "Telemetry status must preserve PRF");
+        require(status.snapshot().ppi_step_overhead_s == 0.25,
+                "Telemetry status must preserve movement overhead");
 
         lidar_client::ScanCycleMonitor monitor;
         monitor.observe_frame(raw_frame(0));

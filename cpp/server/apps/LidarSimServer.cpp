@@ -136,8 +136,8 @@ int main(int argc, char* argv[]) {
         // ① 能力状态帧：设备型号、协议、通道、扫描模式、量程、分辨率等。
         server.send_line(device.status_frame(current_step).to_json_line());
 
-        // 逐时间步推送：默认 PMeye-like 配置约 75 条帧
-        // （1 条 zenith stare + 73 条 PPI 扇区 lidar_raw + 1 条 ground_obs）。
+        // 逐时间步推送：默认 PMeye-like 体扫配置约 218 条核心帧
+        // （1 条 zenith stare + 3 层 × 72 方位 PPI lidar_raw + 1 条 ground_obs）。
         // 若修改仰角/扇区/步进，实际帧数由 SimDeviceConfig 动态决定。
         // ②③ 的数据都由 produce_scan_cycle() 从缓存中取出并封装为帧
         for (int step = 0; step < device.total_steps() && !g_should_stop; ++step) {

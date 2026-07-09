@@ -25,15 +25,16 @@ int main() {
     try {
         lidar_server::SimDeviceConfig config;
         config.ppi_line_dwell_s = 5.0;
+        config.ppi_step_overhead_s = 0.25;
         config.playback_time_scale = 100.0;
         config.inter_frame_delay_ms = 0;
 
         require(lidar_server::acquisition_seconds_for_frame(
-                    config, raw_frame_with_scan_mode("ppi")) == 5.0,
-                "PPI acquisition seconds should follow line dwell");
+                    config, raw_frame_with_scan_mode("ppi")) == 5.25,
+                "PPI acquisition seconds should include dwell and movement overhead");
         require(lidar_server::playback_delay_ms_for_frame(
-                    config, raw_frame_with_scan_mode("ppi")) == 50,
-                "PPI playback delay should be dwell divided by playback scale");
+                    config, raw_frame_with_scan_mode("ppi")) == 53,
+                "PPI playback delay should include movement overhead and playback scale");
         require(lidar_server::playback_delay_ms_for_frame(
                     config, raw_frame_with_scan_mode("stare")) == 300,
                 "Stare playback delay should use 30 seconds acquisition");

@@ -19,6 +19,7 @@ struct DeviceStatusSnapshot {
     double ppi_azimuth_stop_deg = 360.0;
     double ppi_azimuth_step_deg = 0.0;
     double ppi_line_dwell_s = 0.0;
+    double ppi_step_overhead_s = 0.0;
     double ppi_scan_cycle_s = 0.0;
     double playback_time_scale = 1.0;
     double pulse_repetition_hz = 0.0;

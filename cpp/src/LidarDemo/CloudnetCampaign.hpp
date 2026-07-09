@@ -237,6 +237,7 @@ CampaignData load_cloudnet_hybrid_campaign(const PipelineConfig& config) {
         {"ppi_azimuth_stop_deg", config.simulation.ppi_azimuth_stop_deg},
         {"ppi_azimuth_step_deg", config.simulation.ppi_azimuth_step_deg},
         {"ppi_line_dwell_s", config.simulation.ppi_line_dwell_s},
+        {"ppi_step_overhead_s", config.simulation.ppi_step_overhead_s},
         {"ppi_scan_overhead_s", config.simulation.ppi_scan_overhead_s},
         {"ppi_scan_cycle_s", config.simulation.ppi_scan_cycle_seconds()},
         {"pulse_repetition_hz", config.simulation.pulse_repetition_hz},

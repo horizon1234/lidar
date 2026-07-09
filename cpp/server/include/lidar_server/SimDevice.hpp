@@ -22,7 +22,7 @@ namespace lidar_server {
  *
  * 所有字段最终会透传给 lidar_core::SimulationConfig，控制整个前向仿真
  * （场景生成 → 射线投射 → 正演信号）的物理与几何参数。下列默认值
- * 对应一个位于北京的假想站点，时间跨度约 24 小时（206 步 × 7 分钟）。
+ * 对应一个位于北京的假想站点，时间跨度约 24 小时（72 步 × 20 分钟）。
  */
 struct SimDeviceConfig {
     // ---- 站点标识 ----
@@ -44,9 +44,9 @@ struct SimDeviceConfig {
     // ---- 时间维度 ----
     // 真实设备会 24/7 连续发射与上报；这里的时间维度只定义预生成缓存中“不重复环境状态”的时间轴。
     // 每个 step 代表一次完整采集周期（stare + PPI 扇区扫描），不是单个激光脉冲，也不是单个 TCP 帧。
-    // 默认 206 × 7min 约等于 24h；7min 来自默认 30s stare + 73 条 PPI 视线 × 5s dwell ≈ 6.6min 的分钟级近似。
-    int time_steps = 206;                  ///< 预生成扫描周期数量；服务端播完后循环，模拟全天连续运行
-    int minutes_per_step = 7;              ///< 相邻扫描周期时间戳间隔；应接近一次完整体扫的真实采集耗时
+    // 默认 72 × 20min 约等于 24h；20min 来自 30s stare + 3 层 PPI × 72 方位 × (5s dwell + 0.25s 转动稳定) + 15s 周期余量。
+    int time_steps = 72;                   ///< 预生成扫描周期数量；服务端播完后循环，模拟全天连续运行
+    int minutes_per_step = 20;             ///< 相邻扫描周期时间戳间隔；应接近一次完整体扫的真实采集耗时
 
     // ---- 距离分辨率（Range Bin）----
     int range_bin_count = 160;             ///< 每条射线的距离 bin 数量，即一条射线被分成多少段
@@ -56,14 +56,19 @@ struct SimDeviceConfig {
     // ---- PPI 扫描几何 ----
     // PPI（Plan Position Indicator）= 雷达绕垂直轴旋转，在固定仰角下扫描一圈；
     // 多个仰角组合即体积扫描(volume scan)，可重建三维污染场。
-    // 默认按商用 PM 扫描 LiDAR 的扇区模式：低仰角、180° 扇区、2.5° 方位步进。
-    std::vector<double> ppi_elevations_deg = {5.0}; ///< PPI/扇区扫描的仰角序列（°）
+    // 商用设备通常支持可编程扫描：PM/扬尘设备常做水平 360° 或目标扇区扫描；
+    // 边界层/风场扫描多普勒设备常见 1°、5°、15°、35°、75° PPI，再穿插 RHI 或垂直凝视。
+    // 默认采用工地/园区 PM 监测的紧凑三层：1° 捕捉近地面源，5° 覆盖低空输送，15° 提供烟羽抬升约束。
+    std::vector<double> ppi_elevations_deg = {1.0, 5.0, 15.0}; ///< PPI/扇区扫描的仰角序列（°）
     double ppi_azimuth_start_deg = 0.0;    ///< 扇区起始方位角（°）
-    double ppi_azimuth_stop_deg = 180.0;   ///< 扇区结束方位角（°），闭区间
-    double ppi_azimuth_step_deg = 2.5;     ///< PPI 扫描的方位角步进（°），0..180 每 2.5°约 73 条视线
-    double ppi_line_dwell_s = 5.0;         ///< 每条视线积分/驻留时间（s），20 Hz 下约 100 shots
-    double ppi_scan_overhead_s = 0.0;      ///< 转台回扫、状态上报、调度余量（s）
-    double pulse_repetition_hz = 20.0;     ///< 激光脉冲重复频率（Hz）
+    double ppi_azimuth_stop_deg = 360.0;   ///< 扇区结束方位角（°）；360 表示完整一圈，内部不会重复 0°
+    double ppi_azimuth_step_deg = 5.0;     ///< PPI 扫描的方位角步进（°），0..360 每 5°得到 72 条视线
+    double ppi_line_dwell_s = 5.0;         ///< 每条视线积分/驻留时间（s），20 Hz 下约积分 100 个激光脉冲
+    double ppi_step_overhead_s = 0.25;     ///< 相邻方位/仰角切换、转台稳定、编码器确认的单视线平均额外耗时（s）
+    double ppi_scan_overhead_s = 15.0;     ///< 一轮体扫末尾回扫、状态上报、调度余量（s）
+    // 这里的 PRF 是激光发射脉冲频率，不是应用层完整 profile 的上报频率。
+    // Raymetrics PMeye-like UV PM 雷达可用 20 Hz 高能量低 PRF；Halo/StreamLine 等多普勒雷达常见 10~15 kHz 低能量高 PRF。
+    double pulse_repetition_hz = 20.0;     ///< 激光脉冲重复频率（Hz）；每条 profile 通常由 dwell 内多次脉冲平均/积分得到
 
     // ---- 正演物理常数 ----
     // 这些参数直接进入 LiDAR 正演方程：P(r) = C × β(r) / r² × T(r)²

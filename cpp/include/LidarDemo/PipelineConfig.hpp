@@ -47,8 +47,9 @@ struct SimulationConfig {
     double ppi_azimuth_stop_deg = 360.0;  ///< PPI/扇区扫描结束方位角（°）；360 表示完整一圈但不重复 0°
     double ppi_azimuth_step_deg = 30.0;   ///< PPI 扫描的方位角步进（°）
     double ppi_line_dwell_s = 1.0;        ///< 每条视线的积分/驻留时间（s），商用 PM 扫描雷达常见量级为秒到十秒
+    double ppi_step_overhead_s = 0.0;     ///< 相邻方位/仰角切换、转台稳定、编码器确认的单视线平均耗时（s）
     double ppi_scan_overhead_s = 0.0;      ///< 一次扫描周期的转台回零、状态上报等额外耗时（s）
-    double pulse_repetition_hz = 20.0;     ///< 激光脉冲重复频率（Hz），用于估算每条 profile 的积分脉冲数
+    double pulse_repetition_hz = 20.0;     ///< 激光脉冲重复频率（Hz），是激光 shot 频率，不是完整 profile 上报频率
     double system_constant = 260000000.0; ///< LiDAR 系统常数 C（正演发射方程用）
     double lidar_ratio_sr = 45.0;         ///< 气溶胶激光雷达比（sr，消光后向散射比）
     double wavelength_nm = 532.0;         ///< 激光波长（nm），PM 扫描雷达常用 355nm，云高仪常用 905/910nm
@@ -107,7 +108,7 @@ struct SimulationConfig {
 
     double ppi_scan_cycle_seconds() const {
         return static_cast<double>(effective_ppi_elevations_deg().size() * effective_ppi_azimuths_deg().size())
-            * ppi_line_dwell_s + ppi_scan_overhead_s;
+            * (ppi_line_dwell_s + ppi_step_overhead_s) + ppi_scan_overhead_s;
     }
 };
 

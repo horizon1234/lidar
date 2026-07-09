@@ -35,6 +35,7 @@ void SimDevice::init() {
     sim_config_.ppi_azimuth_stop_deg = config_.ppi_azimuth_stop_deg;
     sim_config_.ppi_azimuth_step_deg = config_.ppi_azimuth_step_deg;
     sim_config_.ppi_line_dwell_s = config_.ppi_line_dwell_s;
+    sim_config_.ppi_step_overhead_s = config_.ppi_step_overhead_s;
     sim_config_.ppi_scan_overhead_s = config_.ppi_scan_overhead_s;
     sim_config_.pulse_repetition_hz = config_.pulse_repetition_hz;
     sim_config_.system_constant = config_.system_constant;
@@ -157,7 +158,7 @@ std::vector<lidar_protocol::Frame> SimDevice::produce_scan_cycle(int step_index)
     // 每个时间步包含：
     //   - 1 条 stare 射线（scan_mode="stare", 仰角 90°，天顶凝视）
     //     ↑ 用于 PM2.5 反演的垂直锚定
-    //   - 多仰角 PPI 体扫（scan_mode="ppi"，默认 6 个仰角 × 36 个方位）
+    //   - 多仰角 PPI 体扫（scan_mode="ppi"，默认 3 个仰角 × 72 个方位）
     //     ↑ 用于热点检测和 L3 体素产品
     //   - 1 条地面观测帧（ground_obs）
     //     ↑ 共址地面站的 PM/气象数据
@@ -186,14 +187,14 @@ std::vector<lidar_protocol::Frame> SimDevice::produce_scan_cycle(int step_index)
     std::string scan_cycle_id = config_.site_id + "_" + timestamp + "_cycle";
 
     // ② lidar_raw 帧：把该时间步的每条射线（stare + PPI）序列化为 JSON
-    //    每条帧 payload 包含 22 个字段：
+    //    每条帧 payload 包含角度、距离轴、信号、系统参数、气象场和仿真真值：
     //      - 角度信息：azimuth_deg、elevation_deg、scan_mode、scan_id
     //      - 距离轴：ranges_m[N]（默认 160 个距离 bin，间隔 37.5m，最远 6km）
-    //      - 原始信号：raw_counts[30]（探测器光子计数，核心物理量）
-    //      - 系统参数：laser_energy_mj、background_counts、overlap[30]
+    //      - 原始信号：raw_counts[N]（探测器光子计数，核心物理量）
+    //      - 系统参数：laser_energy_mj、background_counts、overlap[N]
     //      - 气象场：relative_humidity、temperature_c、wind_speed_ms、wind_dir_deg
-    //      - 分子场：molecular_backscatter[30]、molecular_extinction[30]（Rayleigh 散射背景）
-    //      - 真值场（仅仿真有）：true_backscatter/extinction/pm25/pm10/hotspot_mask[30]
+    //      - 分子场：molecular_backscatter[N]、molecular_extinction[N]（Rayleigh 散射背景）
+    //      - 真值场（仅仿真有）：true_backscatter/extinction/pm25/pm10/hotspot_mask[N]
     int ray_index = 0;
     for (const auto& profile : profiles) {
         lidar_core::Json payload = lidar_protocol::profile_to_json(profile);
@@ -209,6 +210,7 @@ std::vector<lidar_protocol::Frame> SimDevice::produce_scan_cycle(int step_index)
         payload["full_overlap_m"] = config_.full_overlap_m;
         payload["pulse_repetition_hz"] = config_.pulse_repetition_hz;
         payload["line_dwell_s"] = config_.ppi_line_dwell_s;
+        payload["ppi_step_overhead_s"] = config_.ppi_step_overhead_s;
         payload["integrated_pulses"] = static_cast<int>(std::round(config_.pulse_repetition_hz * config_.ppi_line_dwell_s));
         payload["signal_unit"] = "counts";
         payload["range_unit"] = "m";
@@ -297,6 +299,7 @@ lidar_protocol::Frame SimDevice::status_frame(int step_index) const {
         {"ppi_azimuth_stop_deg", config_.ppi_azimuth_stop_deg},
         {"ppi_azimuth_step_deg", config_.ppi_azimuth_step_deg},
         {"ppi_line_dwell_s", config_.ppi_line_dwell_s},
+        {"ppi_step_overhead_s", config_.ppi_step_overhead_s},
         {"ppi_scan_overhead_s", config_.ppi_scan_overhead_s},
         {"ppi_scan_cycle_s", sim_config_.ppi_scan_cycle_seconds()},
         {"playback_time_scale", config_.playback_time_scale},

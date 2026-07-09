@@ -27,7 +27,8 @@ double acquisition_seconds_for_frame(
         return 30.0;
     }
 
-    return std::max(config.ppi_line_dwell_s, 0.0);
+    return std::max(config.ppi_line_dwell_s, 0.0)
+        + std::max(config.ppi_step_overhead_s, 0.0);
 }
 
 int playback_delay_ms_for_frame(

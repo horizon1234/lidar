@@ -83,6 +83,9 @@ bool DeviceStatusModel::update_from_frame(const lidar_protocol::Frame& frame) {
     if (frame.payload.contains("ppi_line_dwell_s")) {
         snapshot_.ppi_line_dwell_s = get_number(frame.payload, "ppi_line_dwell_s");
     }
+    if (frame.payload.contains("ppi_step_overhead_s")) {
+        snapshot_.ppi_step_overhead_s = get_number(frame.payload, "ppi_step_overhead_s");
+    }
     if (frame.payload.contains("ppi_scan_cycle_s")) {
         snapshot_.ppi_scan_cycle_s = get_number(frame.payload, "ppi_scan_cycle_s");
     }
@@ -115,6 +118,7 @@ lidar_core::Json DeviceStatusModel::to_json() const {
         {"ppi_azimuth_stop_deg", snapshot_.ppi_azimuth_stop_deg},
         {"ppi_azimuth_step_deg", snapshot_.ppi_azimuth_step_deg},
         {"ppi_line_dwell_s", snapshot_.ppi_line_dwell_s},
+        {"ppi_step_overhead_s", snapshot_.ppi_step_overhead_s},
         {"ppi_scan_cycle_s", snapshot_.ppi_scan_cycle_s},
         {"playback_time_scale", snapshot_.playback_time_scale},
         {"pulse_repetition_hz", snapshot_.pulse_repetition_hz},
@@ -133,6 +137,7 @@ std::string DeviceStatusModel::brief() const {
            << " vendor=" << snapshot_.vendor_profile
            << " PRF=" << snapshot_.pulse_repetition_hz << "Hz"
            << " dwell=" << snapshot_.ppi_line_dwell_s << "s"
+           << " move=" << snapshot_.ppi_step_overhead_s << "s"
            << " sector=" << snapshot_.ppi_azimuth_start_deg
            << "-" << snapshot_.ppi_azimuth_stop_deg
            << " step=" << snapshot_.ppi_azimuth_step_deg
