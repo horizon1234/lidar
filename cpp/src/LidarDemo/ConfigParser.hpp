@@ -98,6 +98,7 @@ PipelineConfig parse_pipeline_config(const Json& value) {
     config.simulation.read_noise_counts = simulation.contains("read_noise_counts") ? simulation.at("read_noise_counts").number_value() : config.simulation.read_noise_counts;
     config.simulation.adc_saturation_counts = simulation.contains("adc_saturation_counts") ? simulation.at("adc_saturation_counts").number_value() : config.simulation.adc_saturation_counts;
     config.simulation.dead_time_loss = simulation.contains("dead_time_loss") ? simulation.at("dead_time_loss").number_value() : config.simulation.dead_time_loss;
+    config.simulation.afterpulsing_ratio = simulation.contains("afterpulsing_ratio") ? simulation.at("afterpulsing_ratio").number_value() : config.simulation.afterpulsing_ratio;
     config.simulation.solar_background_scale = simulation.contains("solar_background_scale") ? simulation.at("solar_background_scale").number_value() : config.simulation.solar_background_scale;
     config.simulation.vehicle_speed_ms = simulation.contains("vehicle_speed_ms") ? simulation.at("vehicle_speed_ms").number_value() : config.simulation.vehicle_speed_ms;
     config.simulation.truth_hotspot_ext_threshold = simulation.contains("truth_hotspot_ext_threshold") ? simulation.at("truth_hotspot_ext_threshold").number_value() : config.simulation.truth_hotspot_ext_threshold;

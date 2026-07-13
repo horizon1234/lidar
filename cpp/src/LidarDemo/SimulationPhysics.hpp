@@ -206,6 +206,8 @@ std::vector<double> simulate_raw_counts(
     raw_counts.reserve(ranges_m.size());
     double optical_depth = 0.0;
     double step_km = ranges_m.size() > 1 ? (ranges_m[1] - ranges_m[0]) / 1000.0 : 0.05;
+    // afterpulsing：上一 bin 泄漏到当前 bin 的延迟伪计数（APD/SPAD 捕获载流子释放）
+    double prev_true_counts = 0.0;
 
     for (std::size_t index = 0; index < ranges_m.size(); ++index) {
         // 累积光学厚度，对应 LiDAR 方程双程透过率 exp(-2τ)
@@ -217,7 +219,11 @@ std::vector<double> simulate_raw_counts(
         // 白天户外太阳背景会随仰角/距离弱变化，这里把它并入距离相关背景项。
         double range_background = background_counts + simulation.detector_dark_counts
             + simulation.solar_background_scale * 0.018 * background_counts * range_km;
-        double expected_counts = std::max(signal + range_background, 0.0);
+
+        // afterpulsing 叠加：上一 bin 真实计数按比例泄漏到当前 bin，模拟 APD 捕获载流子延迟释放。
+        // 这会产生"强信号后拖尾"，是真实 MPL 近场数据最常见的伪影。
+        double afterpulse = simulation.afterpulsing_ratio * prev_true_counts;
+        double expected_counts = std::max(signal + range_background + afterpulse, 0.0);
 
         double sampled = 0.0;
         if (expected_counts < 900000.0) {
@@ -228,10 +234,16 @@ std::vector<double> simulate_raw_counts(
         }
         sampled += sample_gaussian(rng, 0.0, simulation.read_noise_counts);
 
-        // photon-counting 死时间和模拟链路饱和：近距离强回波不会无限增大。
+        // photon-counting 死时间软压缩：N_obs = N / (1 + α·N)
+        // 物理含义：SPAD/PMT 探测一个光子后 τ_dead 内无法响应下一个，高计数率时非线性压平。
+        // 与硬截断不同，这会产生平滑的饱和曲线——近场强回波不会"撞墙"而是渐近趋近上限。
         double dead_time_corrected = sampled / (1.0 + simulation.dead_time_loss * std::max(sampled, 0.0));
+        // 硬饱和作为安全阀（仅极端情况触发）
         double saturated = std::min(dead_time_corrected, simulation.adc_saturation_counts);
         raw_counts.push_back(std::max(saturated, range_background + 0.1));
+
+        // 记录当前 bin 的真实计数（不含 afterpulsing），供下一 bin 泄漏使用
+        prev_true_counts = std::max(signal + range_background, 0.0);
     }
     return raw_counts;
 }
