@@ -49,5 +49,5 @@
     "note": "Use this when no vendor-specific public schema is selected.",
     "public_format_basis": "Project generic JSON line protocol"
   },
-  "vendor_profile": "generic_jsonl"
+  "vendor_profile": "near_ir_micro_pulse_pm_like"
 }
