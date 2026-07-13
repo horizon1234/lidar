@@ -57,6 +57,7 @@ struct SimDeviceConfig {
     // PPI（Plan Position Indicator）= 雷达绕垂直轴旋转，在固定仰角下扫描一圈；
     // 多个仰角组合即体积扫描(volume scan)，可重建三维污染场。
     // 商用设备通常支持可编程扫描：PM/扬尘设备常做水平 360° 或目标扇区扫描；
+
     // 边界层/风场扫描多普勒设备常见 1°、5°、15°、35°、75° PPI，再穿插 RHI 或垂直凝视。
     // 默认采用工地/园区 PM 监测的紧凑三层：1° 捕捉近地面源，5° 覆盖低空输送，15° 提供烟羽抬升约束。
     std::vector<double> ppi_elevations_deg = {1.0, 5.0, 15.0}; ///< PPI/扇区扫描的仰角序列（°）
@@ -72,16 +73,22 @@ struct SimDeviceConfig {
     double pulse_repetition_hz = 5000.0;   ///< 激光脉冲重复频率（Hz）；每条 profile 通常由 dwell 内多次脉冲平均/积分得到
 
     // ---- 正演物理常数 ----
-    // 这些参数直接进入 LiDAR 正演方程：P(r) = C × β(r) / r² × T(r)²
-    double system_constant = 260000000.0;  ///< LiDAR 系统常数 C，综合发射能量、光学效率、接收口径等因素
+    // 这些参数直接进入 LiDAR 正演方程：P(r) = C × β(r) / r² × T(r)² 
+    // 下列默认值对标中科光电 YLJ5 / Sigma MiniMPL 等“微脉冲 PM LiDAR”：
+    //   • 532 nm 是 MPL 类最主流波长（MPLNET 全球网、CIMEL、Leosphere 均用），便于做偏振分光；
+    //   • 微脉冲（MPL）的物理本质是“μJ 级能量 × kHz 重复频率 × 长时间积分”，
+    //     单脉冲能量约 10~50 μJ（0.01~0.05 mJ），不是 0.5 mJ 那种大脉冲；
+    //   • 系统常数 C 与 E 相乘（signal = C·E·…），因此 E 降低 25 倍后 C 同步放大 25 倍
+    //     以保持 raw_counts 量级不变（信号靠积分累积，不靠单脉冲能量）。
+    double system_constant = 6500000000.0; ///< LiDAR 系统常数 C，综合发射能量、光学效率、接收口径等因素
     //   ↑ 决定回波信号的绝对量级；值越大，同一大气条件下接收到的信号越强
     double lidar_ratio_sr = 45.0;          ///< 气溶胶激光雷达比（单位 sr），即消光系数与后向散射系数之比
     //   ↑ 典型值 40~60 sr（城市污染气溶胶 ~45 sr）；用于反演时区分气溶胶与分子贡献
-    double wavelength_nm = 1064.0;         ///< 工地/园区 PM 监测常见近红外弹性通道（也有 905/910/1550nm 或 532+1064nm）
-    double pulse_energy_mj = 0.5;          ///< 单脉冲能量均值（mJ）；kHz 微脉冲设备通常低于低 PRF 大能量 Nd:YAG
+    double wavelength_nm = 532.0;          ///< MPL 类最主流波长（532nm），便于做偏振分光；近红外可选 905/910/1064/1550nm
+    double pulse_energy_mj = 0.02;         ///< 单脉冲能量均值（mJ），微脉冲 MPL 典型 10~50μJ；靠 kHz 积分凑信噪比
     double pulse_energy_jitter = 0.04;     ///< 脉冲能量相对抖动
     double background_counts_mean = 80.0;  ///< 白天户外背景计数均值
-    double full_overlap_m = 200.0;         ///< 完整 overlap 距离（m）
+    double full_overlap_m = 40.0;          ///< 完整 overlap 距离（m）；双望远镜设计可压到几十米，实现“零盲区”
 
     // ---- 推送节奏 ----
     double playback_time_scale = 1.0;      ///< 播放加速倍率；1.0 表示按真实采集耗时推送

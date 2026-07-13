@@ -18,8 +18,14 @@
     "pulse_repetition_hz": 5000.0,
     "system_constant": 260000000.0,
     "lidar_ratio_sr": 45.0,
-    "wavelength_nm": 1064.0,
-    "pulse_energy_mj": 0.5
+    "wavelength_nm": 532.0,
+    "pulse_energy_mj": 0.5,
+    "detector_dark_counts": 0.0,
+    "read_noise_counts": 0.0,
+    "adc_saturation_counts": 50000000.0,
+    "dead_time_loss": 0.000000018,
+    "afterpulsing_ratio": 0.0,
+    "solar_background_scale": 1.0
   },
   "retrieval": {
     "aerosol_lidar_ratio_sr": 45.0,

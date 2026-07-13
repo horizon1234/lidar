@@ -50,19 +50,20 @@ struct SimulationConfig {
     double ppi_step_overhead_s = 0.0;     ///< 相邻方位/仰角切换、转台稳定、编码器确认的单视线平均耗时（s）
     double ppi_scan_overhead_s = 0.0;      ///< 一次扫描周期的转台回零、状态上报等额外耗时（s）
     double pulse_repetition_hz = 5000.0;  ///< 激光脉冲重复频率（Hz），是激光 shot 频率，不是完整 profile 上报频率
-    double system_constant = 260000000.0; ///< LiDAR 系统常数 C（正演发射方程用）
+    double system_constant = 6500000000.0; ///< LiDAR 系统常数 C（正演发射方程用）；C·E 乘积需与能量匹配
     double lidar_ratio_sr = 45.0;         ///< 气溶胶激光雷达比（sr，消光后向散射比）
-    double wavelength_nm = 1064.0;        ///< 激光波长（nm），工地/园区 PM 常见 905/910/1064/1550nm，也有 532+1064nm 双波长
-    double pulse_energy_mj = 0.5;         ///< 单脉冲能量均值（mJ），用于仿真每条射线的能量抖动
+    double wavelength_nm = 532.0;         ///< 激光波长（nm），MPL 类主流 532nm；近红外可选 905/910/1064/1550nm
+    double pulse_energy_mj = 0.02;        ///< 单脉冲能量均值（mJ），微脉冲 MPL 典型 10~50μJ；靠 kHz 积分凑信噪比
     double pulse_energy_jitter = 0.03;    ///< 脉冲能量相对抖动（1 sigma）
     double background_counts_mean = 10.5; ///< 背景/暗计数均值（计数）
     double background_counts_jitter = 0.5;///< 背景计数随机扰动（1 sigma）
-    double full_overlap_m = 500.0;        ///< 进入完整 overlap 的距离（m）
+    double full_overlap_m = 40.0;         ///< 进入完整 overlap 的距离（m）；双望远镜可压到几十米
     double min_overlap = 0.22;            ///< 近场最小 overlap
     double detector_dark_counts = 0.0;    ///< 探测器暗计数等效均值
     double read_noise_counts = 0.0;       ///< 读出噪声（计数）
-    double adc_saturation_counts = 50000000.0; ///< 模拟/ADC 饱和上限
-    double dead_time_loss = 0.000000018;  ///< photon-counting 死时间损失近似系数
+    double adc_saturation_counts = 2000000.0; ///< 探测器/ADC 硬饱和上限（安全阀）；SPAD 典型 Mcp·rate~数百万
+    double dead_time_loss = 0.0000025;   ///< photon-counting 死时间软压缩系数 α；N_obs=N/(1+α·N)，近场强回波压成软平台而非硬墙
+    double afterpulsing_ratio = 0.02;    ///< APD/SPAD afterpulsing 比例（0~0.05）；捕获载流子在下一 bin 释放产生的延迟伪计数
     double solar_background_scale = 1.0;  ///< 太阳背景强度缩放，移动/白天工地可调高
     double vehicle_speed_ms = 0.0;        ///< 走航模式下平台速度（m/s），固定站为 0
     double truth_hotspot_ext_threshold = 0.025; ///< 真值热点掩膜的烟羽干消光贡献阈值，默认保留旧行为
