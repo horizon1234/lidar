@@ -4,10 +4,70 @@
  */
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
 namespace lidar_demo {
+
+/** @brief 逐距离门质量位的存储类型；一个 bin 可同时具有多个原因位。 */
+using BinQualityMask = std::uint32_t;
+
+/**
+ * @brief 逐距离门质量位；可同时记录多个导致无效或降级的原因。
+ *
+ * 这些值是协议和处理结果的一部分，位序一旦发布就不能重排。partial_overlap 是降级位：
+ * 它允许定性光学反演，但禁止 PM/热点；其余列入 RetrievalInvalidQualityMask 的位会直接
+ * 阻断 Fernald。上游固件或适配器也必须使用同一位定义。
+ */
+enum class BinQualityFlag : BinQualityMask {
+    none = 0,                         ///< 当前未发现失效或降级原因。
+    below_minimum_range = 1u << 0,   ///< 位于触发瞬态/距离零点标定给出的最小有效距离内。
+    overlap_unusable = 1u << 1,      ///< overlap 太低，除法会不可接受地放大噪声和标定误差。
+    partial_overlap = 1u << 2,       ///< 可做定性光学反演，但未达到定量 PM 所需 overlap。
+    saturated = 1u << 3,             ///< ADC 或光子计数器达到饱和保护区，真实计数不可恢复。
+    dead_time_uncorrectable = 1u << 4, ///< 光子计数占用率过高，死时间反函数接近发散。
+    low_snr = 1u << 5,               ///< 通道 SNR 低于配置阈值。
+    non_finite_input = 1u << 6,      ///< 原始计数、背景或 overlap 含 NaN/Inf。
+    no_valid_channel = 1u << 7,      ///< 近、远场在该距离门均不可用。
+    invalid_laser_energy = 1u << 8,  ///< 激光能量缺失/非正，无法做能量归一化。
+    upstream_invalid = 1u << 9,      ///< 固件标记无效，或 afterpulse 依赖的前序 bin 不可恢复。
+    retrieval_unavailable = 1u << 10, ///< 未落入 Fernald 最长连续有效区或反演输出非有限。
+};
+
+/** @brief 把强类型枚举转换为可按位组合的整数掩码。 */
+constexpr BinQualityMask quality_mask(BinQualityFlag flag) {
+    return static_cast<BinQualityMask>(flag);
+}
+
+/** @brief 判断一个逐 bin 掩码是否包含指定原因位。 */
+constexpr bool has_quality(BinQualityMask mask, BinQualityFlag flag) {
+    return (mask & quality_mask(flag)) != 0;
+}
+
+/** @brief 任何一个命中都会阻断光学反演的质量位集合；partial_overlap 不在其中。 */
+constexpr BinQualityMask RetrievalInvalidQualityMask =
+    quality_mask(BinQualityFlag::below_minimum_range)
+    | quality_mask(BinQualityFlag::overlap_unusable)
+    | quality_mask(BinQualityFlag::saturated)
+    | quality_mask(BinQualityFlag::dead_time_uncorrectable)
+    | quality_mask(BinQualityFlag::low_snr)
+    | quality_mask(BinQualityFlag::non_finite_input)
+    | quality_mask(BinQualityFlag::no_valid_channel)
+    | quality_mask(BinQualityFlag::invalid_laser_energy)
+    | quality_mask(BinQualityFlag::upstream_invalid)
+    | quality_mask(BinQualityFlag::retrieval_unavailable);
+
+/** @brief 判断 bin 是否可进入 Fernald/Klett 及干消光计算。 */
+constexpr bool bin_is_usable_for_retrieval(BinQualityMask mask) {
+    return (mask & RetrievalInvalidQualityMask) == 0;
+}
+
+/** @brief 判断 bin 是否同时满足反演和定量 overlap 要求，可进入 PM/热点。 */
+constexpr bool bin_is_usable_for_quantitative_product(BinQualityMask mask) {
+    return bin_is_usable_for_retrieval(mask)
+        && !has_quality(mask, BinQualityFlag::partial_overlap);
+}
 
 // ============================================================================
 // 数据载体结构体
@@ -37,6 +97,7 @@ struct LidarChannel {
     double background_counts = 0.0;   ///< 单脉冲等效背景计数。
     std::vector<double> raw_counts;   ///< 与 profile 距离轴对齐的通道原始计数。
     std::vector<double> overlap;      ///< 与 profile 距离轴对齐的几何重叠因子。
+    std::vector<BinQualityMask> device_bin_quality; ///< 固件/适配器给出的逐距离门质量位，可为空。
 };
 
 /**
@@ -62,8 +123,8 @@ struct LidarProfile {
     double temperature_c = 0.0;   ///< 温度（℃）
     double wind_speed_ms = 0.0;   ///< 风速（m/s）
     double wind_dir_deg = 0.0;    ///< 风向（°）
-    std::vector<double> molecular_backscatter;  ///< 分子（Rayleigh）后向散射系数（1/(m·sr)）
-    std::vector<double> molecular_extinction;   ///< 分子（Rayleigh）消光系数（1/m）
+    std::vector<double> molecular_backscatter;  ///< 分子（Rayleigh）后向散射系数（km^-1 sr^-1）
+    std::vector<double> molecular_extinction;   ///< 分子（Rayleigh）消光系数（km^-1）
     // ---- 以下真值字段仅在仿真/评估中使用，真实数据不存在 ----
     std::vector<double> true_backscatter;  ///< 气溶胶后向散射真值（用于评估）
     std::vector<double> true_extinction;   ///< 气溶胶消光真值（用于评估）
@@ -73,6 +134,7 @@ struct LidarProfile {
     // raw_counts 是近远场平行通道拼接后的反演主通道。
     std::vector<LidarChannel> channels; ///< 近/远场与平行/垂直偏振组成的物理通道列表。
     std::vector<double> depolarization_ratio; ///< 与距离轴对齐的体退偏比。
+    std::vector<BinQualityMask> device_bin_quality; ///< 拼接主通道的上游逐距离门质量位，可为空。
 };
 
 /**
@@ -108,6 +170,7 @@ struct PreprocessResult {
     std::vector<double> l1_signal;              ///< 背景扣除后的 L1 信号
     std::vector<double> attenuated_backscatter; ///< 能量/overlap/range 校正后的衰减后向散射代理量
     std::vector<double> snr;                    ///< 距离门信噪比
+    std::vector<BinQualityMask> bin_quality;     ///< 与距离轴对齐的逐距离门质量位。
     std::vector<std::string> qc_flags;          ///< 质控标志
 };
 
@@ -122,11 +185,12 @@ struct ProcessedProfile {
     std::vector<double> l1_signal;    ///< L1 级信号（背景扣除+能量归一化+重叠校正后）
     std::vector<double> attenuated_backscatter; ///< 衰减后向散射（距离平方校正后）
     std::vector<double> snr;          ///< 各 bin 的信噪比（SNR）
-    std::vector<double> extinction;   ///< 反演得到的（含湿）消光系数（1/m）
-    std::vector<double> dry_extinction; ///< 干状态消光系数（湿度校正后，1/m）
+    std::vector<double> extinction;   ///< 反演得到的（含湿）消光系数（km^-1）
+    std::vector<double> dry_extinction; ///< 干状态消光系数（湿度校正后，km^-1）
     std::vector<double> pm25;         ///< 估算的 PM2.5 浓度（µg/m³）
     std::vector<double> pm10;         ///< 估算的 PM10 浓度（µg/m³）
     std::vector<std::vector<double>> enu_points_m; ///< 各 bin 在 ENU 坐标系下的 [东,北,上]（m）
+    std::vector<BinQualityMask> bin_quality; ///< 与产品数组对齐的逐距离门质量位。
     std::vector<std::string> qc_flags; ///< 质控标志列表（如 low-laser-energy 等）
     double latency_ms = 0.0;          ///< 处理该射线所耗费的时间（ms，用于性能统计）
 };

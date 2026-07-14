@@ -1,0 +1,22 @@
+{
+  "calibration_id": "replace-with-site-pm-calibration-id",
+  "valid_from": "YYYY-MM-DD",
+  "pm25_intercept_ugm3": 0.0,
+  "pm25_slope_ugm3_per_km": 0.0,
+  "pm10_intercept_ugm3": 0.0,
+  "pm10_slope_ugm3_per_km": 0.0,
+  "receiver_calibration": {
+    "calibration_id": "replace-with-device-serial-and-receiver-calibration-id",
+    "detector_mode": "photon_counting",
+    "signal_unit": "mean_counts_per_pulse",
+    "range_zero_offset_m": 0.0,
+    "minimum_valid_range_m": 3.75,
+    "minimum_retrieval_overlap": 0.1,
+    "minimum_quantitative_overlap": 0.9,
+    "saturation_counts": 2000000.0,
+    "saturation_guard_fraction": 0.98,
+    "dead_time_loss_per_count": 0.0000025,
+    "maximum_dead_time_occupancy": 0.8,
+    "afterpulse_kernel": [0.02]
+  }
+}

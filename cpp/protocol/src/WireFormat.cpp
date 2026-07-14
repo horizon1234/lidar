@@ -118,12 +118,37 @@ std::vector<int> json_array_to_ints(const lidar_core::Json& json) {
     return output;
 }
 
+std::vector<lidar_core::BinQualityMask> json_array_to_quality_masks(
+    const lidar_core::Json& json) {
+    std::vector<lidar_core::BinQualityMask> output;
+    if (json.is_array()) {
+        output.reserve(json.array_items().size());
+        for (const auto& item : json.array_items()) {
+            const int value = item.int_value();
+            output.push_back(value >= 0
+                ? static_cast<lidar_core::BinQualityMask>(value)
+                : lidar_core::quality_mask(lidar_core::BinQualityFlag::upstream_invalid));
+        }
+    }
+    return output;
+}
+
 /// 将 double 向量转为 JSON 数组
 lidar_core::Json doubles_to_json_array(const std::vector<double>& values) {
     lidar_core::Json::Array output;
     output.reserve(values.size());
     for (double v : values) {
         output.emplace_back(v);
+    }
+    return lidar_core::Json(std::move(output));
+}
+
+lidar_core::Json quality_masks_to_json_array(
+    const std::vector<lidar_core::BinQualityMask>& values) {
+    lidar_core::Json::Array output;
+    output.reserve(values.size());
+    for (const auto value : values) {
+        output.emplace_back(static_cast<double>(value));
     }
     return lidar_core::Json(std::move(output));
 }
@@ -140,6 +165,7 @@ lidar_core::Json channel_to_json(const lidar_core::LidarChannel& channel) {
         {"background_counts", channel.background_counts},
         {"raw_counts", doubles_to_json_array(channel.raw_counts)},
         {"overlap", doubles_to_json_array(channel.overlap)},
+        {"device_bin_quality", quality_masks_to_json_array(channel.device_bin_quality)},
     };
 }
 
@@ -169,6 +195,9 @@ lidar_core::LidarChannel json_to_channel(const lidar_core::Json& json) {
     if (json.contains("overlap")) {
         channel.overlap = json_array_to_doubles(json.at("overlap"));
     }
+    if (json.contains("device_bin_quality")) {
+        channel.device_bin_quality = json_array_to_quality_masks(json.at("device_bin_quality"));
+    }
     return channel;
 }
 
@@ -195,6 +224,7 @@ lidar_core::Json profile_to_json(
         {"wind_speed_ms", profile.wind_speed_ms},
         {"wind_dir_deg", profile.wind_dir_deg},
         {"depolarization_ratio", doubles_to_json_array(profile.depolarization_ratio)},
+        {"device_bin_quality", quality_masks_to_json_array(profile.device_bin_quality)},
     };
 
     lidar_core::Json::Array channels;
@@ -255,6 +285,7 @@ lidar_core::LidarProfile json_to_profile(const lidar_core::Json& json) {
     if (json.contains("true_pm10"))            profile.true_pm10 = json_array_to_doubles(json.at("true_pm10"));
     if (json.contains("true_hotspot_mask"))    profile.true_hotspot_mask = json_array_to_ints(json.at("true_hotspot_mask"));
     if (json.contains("depolarization_ratio")) profile.depolarization_ratio = json_array_to_doubles(json.at("depolarization_ratio"));
+    if (json.contains("device_bin_quality"))   profile.device_bin_quality = json_array_to_quality_masks(json.at("device_bin_quality"));
     if (json.contains("channels") && json.at("channels").is_array()) {
         for (const auto& item : json.at("channels").array_items()) {
             if (item.is_object()) {

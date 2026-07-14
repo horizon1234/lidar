@@ -9,6 +9,7 @@
 #include <QTcpSocket>
 #include <QThread>
 
+#include <cmath>
 #include <filesystem>
 #include <stdexcept>
 
@@ -19,6 +20,7 @@ namespace {
 constexpr qsizetype MaximumBufferedBytes = 64 * 1024 * 1024;
 
 double required_number(const lidar_core::Json& json, const char* key) {
+    // 接收机和 PM 系数属于强合同：字段缺失时拒绝整份标定，不能用 0 静默回退。
     if (!json.contains(key) || !json.at(key).is_number()) {
         throw std::runtime_error(std::string("missing calibration field: ") + key);
     }
@@ -29,6 +31,77 @@ std::string optional_string(const lidar_core::Json& json, const char* key) {
     return json.contains(key) && json.at(key).is_string()
         ? json.at(key).string_value()
         : "";
+}
+
+/**
+ * @brief 把组合标定 JSON 中的 receiver_calibration 对象解析为强类型模型。
+ *
+ * 除结构检查外还验证参数的基本物理范围。这里不判断标定是否真的来自实验室；valid=true
+ * 表示文件合同完整且调用方明确选择加载，标定 ID 负责后续审计追踪。
+ */
+ReceiverCalibrationModel parse_receiver_calibration(const lidar_core::Json& json) {
+    if (!json.is_object()) {
+        throw std::runtime_error("receiver_calibration must be an object");
+    }
+    ReceiverCalibrationModel model;
+    model.calibration_id = optional_string(json, "calibration_id");
+    model.detector_mode = optional_string(json, "detector_mode");
+    model.signal_unit = optional_string(json, "signal_unit");
+    model.range_zero_offset_m = required_number(json, "range_zero_offset_m");
+    model.minimum_valid_range_m = required_number(json, "minimum_valid_range_m");
+    model.minimum_retrieval_overlap = required_number(json, "minimum_retrieval_overlap");
+    model.minimum_quantitative_overlap = required_number(
+        json, "minimum_quantitative_overlap");
+    model.saturation_counts = required_number(json, "saturation_counts");
+    model.saturation_guard_fraction = required_number(json, "saturation_guard_fraction");
+    model.dead_time_loss_per_count = required_number(json, "dead_time_loss_per_count");
+    model.maximum_dead_time_occupancy = required_number(
+        json, "maximum_dead_time_occupancy");
+    // 默认模型自带仿真 kernel，加载实机文件时必须清空并完全采用文件内容。
+    model.afterpulse_kernel.clear();
+    if (!json.contains("afterpulse_kernel") || !json.at("afterpulse_kernel").is_array()) {
+        throw std::runtime_error("missing calibration field: afterpulse_kernel");
+    }
+    double kernel_sum = 0.0;
+    for (const auto& item : json.at("afterpulse_kernel").array_items()) {
+        // 单个泄漏系数必须非负且小于 0.5，避免递推反卷积明显不稳定。
+        if (!item.is_number() || item.number_value() < 0.0
+            || item.number_value() >= 0.5) {
+            throw std::runtime_error("afterpulse_kernel contains an invalid coefficient");
+        }
+        model.afterpulse_kernel.push_back(item.number_value());
+        kernel_sum += item.number_value();
+    }
+    if (model.calibration_id.empty()) {
+        throw std::runtime_error("receiver calibration_id is empty");
+    }
+    if (model.signal_unit != "mean_counts_per_pulse"
+        && model.signal_unit != "integrated_counts") {
+        throw std::runtime_error("receiver signal_unit is unsupported");
+    }
+    if (model.detector_mode != "photon_counting" && model.detector_mode != "analog") {
+        throw std::runtime_error("receiver detector_mode is unsupported");
+    }
+    /*
+     * overlap 反演阈值不得高于定量阈值；占用率必须严格小于数学奇点 1；kernel 总和限制
+     * 为 0.8，保证前序泄漏不会主导当前距离门。更严格的设备验收应由标定流程完成。
+     */
+    if (model.minimum_valid_range_m < 0.0
+        || !std::isfinite(model.range_zero_offset_m)
+        || model.minimum_retrieval_overlap <= 0.0
+        || model.minimum_retrieval_overlap > model.minimum_quantitative_overlap
+        || model.minimum_quantitative_overlap > 1.0
+        || model.saturation_counts <= 0.0
+        || model.saturation_guard_fraction < 0.5
+        || model.saturation_guard_fraction > 1.0
+        || model.dead_time_loss_per_count < 0.0
+        || model.maximum_dead_time_occupancy <= 0.0
+        || model.maximum_dead_time_occupancy >= 1.0
+        || kernel_sum >= 0.8) {
+        throw std::runtime_error("receiver calibration values are outside physical limits");
+    }
+    model.valid = true;
+    return model;
 }
 
 } // namespace
@@ -127,6 +200,7 @@ void LidarClientWorker::send_command(const QString& command) {
 
 void LidarClientWorker::load_pm_calibration(const QString& file_path) {
     try {
+        // 文件读取和全部字段验证都在工作线程执行，GUI 主线程不会因磁盘或 JSON 解析阻塞。
         const auto json = lidar_core::read_json_file(std::filesystem::path(file_path.toStdString()));
         PmCalibrationModel model;
         model.calibration_id = optional_string(json, "calibration_id");
@@ -139,11 +213,20 @@ void LidarClientWorker::load_pm_calibration(const QString& file_path) {
             throw std::runtime_error("calibration_id is empty");
         }
         model.valid = true;
+        // 定量 PM 必须和接收机幅度/有效区标定成套加载，不接受只有 PM 斜率的半份文件。
+        if (!json.contains("receiver_calibration")) {
+            throw std::runtime_error("missing calibration field: receiver_calibration");
+        }
+        auto receiver = parse_receiver_calibration(json.at("receiver_calibration"));
+
+        // 只有 PM 与接收机两部分都成功解析后才修改处理器，避免异常文件造成半更新状态。
         processor_.set_pm_calibration(model);
+        processor_.set_receiver_calibration(receiver);
         emit calibration_changed(
             true,
-            QStringLiteral("已加载站点标定：%1")
-                .arg(QString::fromStdString(model.calibration_id)));
+            QStringLiteral("PM %1 / 接收机 %2")
+                .arg(QString::fromStdString(model.calibration_id))
+                .arg(QString::fromStdString(receiver.calibration_id)));
     } catch (const std::exception& error) {
         emit calibration_changed(
             false,
@@ -187,9 +270,14 @@ void LidarClientWorker::handle_ready_read() {
 
 void LidarClientWorker::process_line(const QByteArray& line) {
     try {
+        // 一行 JSONL 必须先完整解析成 Frame；失败帧不会进入状态机或科学算法。
         const auto frame = lidar_protocol::parse_frame(line.toStdString());
         ++frames_received_;
+
+        // 周期监控先观察原始 ray_index/rays_in_cycle，即使该射线随后科学处理失败也能统计到达情况。
         scan_monitor_.observe_frame(frame);
+
+        // 状态模型消费 status/telemetry/command_result 的增量字段，并向 GUI 发布不可变快照。
         if (device_status_.update_from_frame(frame)) {
             emit device_status_ready(
                 std::make_shared<const DeviceStatusSnapshot>(device_status_.snapshot()));
@@ -214,6 +302,7 @@ void LidarClientWorker::process_line(const QByteArray& line) {
                 emit worker_error(message);
             }
         }
+        // 所有帧最后交给 FrameProcessor：raw 走 L0-L2，ground/status 更新上下文，heartbeat 封口。
         processor_.handle_frame(frame);
     } catch (const std::exception& error) {
         ++parse_errors_;

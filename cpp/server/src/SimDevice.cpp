@@ -355,6 +355,15 @@ bool SimDevice::stream_scan_cycle(
                 static_cast<long long>(std::llround(publish_offset_s * 1000.0))));
         payload["primary_channel_id"] = "stitched_parallel_532nm";
         payload["detector_mode"] = "simulated_photon_counting";
+        payload["simulated_receiver_response"] = lidar_core::Json::Object{
+            {"calibration_status", config.scene.calibration_status},
+            {"dead_time_loss_per_count", config.scene.dead_time_loss},
+            {"afterpulsing_ratio", config.scene.afterpulsing_ratio},
+            {"saturation_counts", config.scene.adc_saturation_counts},
+            {"near_full_overlap_m", config.scene.near_full_overlap_m},
+            {"far_full_overlap_m", config.scene.far_full_overlap_m},
+            {"stitch_range_m", config.scene.channel_stitch_range_m},
+        };
         payload["range_resolution_m"] = config.hardware.range_resolution_m;
         payload["maximum_range_m"] = config.hardware.maximum_range_m;
         payload["wavelength_nm"] = config.hardware.wavelength_nm;

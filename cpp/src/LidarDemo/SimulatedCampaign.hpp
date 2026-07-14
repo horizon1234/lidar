@@ -102,6 +102,7 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
             stare_fields.true_hotspot_mask,
             {},
             {},
+            {},
         };
         auto stare_channels = simulate_ylj5_receiver_channels(
             stare_fields,
@@ -181,6 +182,7 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
                     ppi_fields.true_pm25,
                     ppi_fields.true_pm10,
                     ppi_fields.true_hotspot_mask,
+                    {},
                     {},
                     {},
                 };

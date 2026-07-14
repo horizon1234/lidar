@@ -89,6 +89,9 @@ struct SimulationConfig {
 struct RetrievalConfig {
     double aerosol_lidar_ratio_sr = 45.0;          ///< 气溶胶激光雷达比（sr）。
     double reference_aerosol_backscatter = 0.0004; ///< 远端参考气溶胶后向散射。
+    int reference_window_bins = 64;                ///< 从有效廓线远端选取的参考窗距离门数。
+    int minimum_valid_bins = 16;                   ///< 允许执行反演的最短连续有效区间。
+    double maximum_extinction_per_km = 0.45;       ///< 数值稳定保护上限（km^-1）。
 };
 
 /** @brief 湿度修正参数。 */

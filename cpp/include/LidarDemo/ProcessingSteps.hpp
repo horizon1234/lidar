@@ -24,7 +24,8 @@ public:
 
     std::pair<std::vector<double>, std::vector<double>> process(
         const LidarProfile& profile,
-        const std::vector<double>& attenuated_backscatter) const;
+        const std::vector<double>& attenuated_backscatter,
+        const std::vector<BinQualityMask>& bin_quality = {}) const;
 
 private:
     RetrievalConfig config_; ///< 当前弹性反演参数。
