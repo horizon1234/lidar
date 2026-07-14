@@ -102,3 +102,19 @@ add_test(
     NAME lidar_client_device_telemetry_test
     COMMAND lidar_client_device_telemetry_test
 )
+
+add_executable(lidar_client_frame_processor_test cpp/tests/TestClientFrameProcessor.cpp)
+target_link_libraries(lidar_client_frame_processor_test PRIVATE lidar_client lidar_protocol lidar_core)
+
+add_test(
+    NAME lidar_client_frame_processor_test
+    COMMAND lidar_client_frame_processor_test
+)
+
+add_executable(lidar_sim_device_ylj5_test cpp/tests/TestSimDeviceYlj5.cpp)
+target_link_libraries(lidar_sim_device_ylj5_test PRIVATE lidar_server lidar_protocol lidar_core)
+
+add_test(
+    NAME lidar_sim_device_ylj5_test
+    COMMAND lidar_sim_device_ylj5_test
+)

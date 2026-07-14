@@ -24,20 +24,21 @@ lidar_protocol::Frame raw_frame_with_scan_mode(const std::string& mode) {
 int main() {
     try {
         lidar_server::SimDeviceConfig default_config;
-        require(default_config.playback_time_scale == 1.0,
+        require(default_config.stream.playback_time_scale == 1.0,
                 "Default playback should follow real acquisition time");
         require(lidar_server::playback_delay_ms_for_frame(
-                    default_config, raw_frame_with_scan_mode("ppi")) == 1200,
-                "Default PPI playback delay should be 1.0s dwell plus 0.2s movement");
+                    default_config, raw_frame_with_scan_mode("ppi")) == 2200,
+                "Default PPI playback delay should be 2.0s dwell plus 0.2s movement");
         require(lidar_server::playback_delay_ms_for_frame(
                     default_config, raw_frame_with_scan_mode("stare")) == 30000,
                 "Default stare playback delay should be 30 seconds");
 
         lidar_server::SimDeviceConfig config;
-        config.ppi_line_dwell_s = 5.0;
-        config.ppi_step_overhead_s = 0.25;
-        config.playback_time_scale = 100.0;
-        config.inter_frame_delay_ms = 0;
+        config.scan.line_dwell_s = 5.0;
+        config.scan.azimuth_step_deg = 2.5;
+        config.scan.scan_speed_deg_s = 10.0;
+        config.stream.playback_time_scale = 100.0;
+        config.stream.inter_frame_delay_ms = 0;
 
         require(lidar_server::acquisition_seconds_for_frame(
                     config, raw_frame_with_scan_mode("ppi")) == 5.25,
@@ -56,7 +57,7 @@ int main() {
         require(lidar_server::playback_delay_ms_for_frame(config, status) == 0,
                 "Non-raw frames should not add acquisition delay");
 
-        config.inter_frame_delay_ms = 17;
+        config.stream.inter_frame_delay_ms = 17;
         require(lidar_server::playback_delay_ms_for_frame(
                     config, raw_frame_with_scan_mode("ppi")) == 17,
                 "Fixed inter-frame override should win");

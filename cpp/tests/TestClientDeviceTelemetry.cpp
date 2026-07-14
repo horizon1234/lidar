@@ -35,7 +35,14 @@ int main() {
             lidar_core::Json::Object{
                 {"site_id", "site-001"},
                 {"device_model", "SIM-FIELD-PM-LIDAR"},
+                {"regulatory_model", "AGHJ-I-LIDAR(MPL)"},
+                {"vendor_wire_protocol_known", false},
                 {"vendor_profile", "raymetrics_pmeye_like"},
+                {"scan_program_mode", "scheduled_multi_elevation"},
+                {"active_azimuth_scan_pattern", "conical_scan"},
+                {"elevation_cycle_policy", "round_robin"},
+                {"scheduled_elevations_deg", lidar_core::Json::Array{0.0, 5.0}},
+                {"active_ppi_elevation_deg", 5.0},
                 {"ppi_azimuth_step_deg", 2.5},
                 {"ppi_line_dwell_s", 5.0},
                 {"ppi_step_overhead_s", 0.25},
@@ -59,16 +66,26 @@ int main() {
                 "Stare dwell should parse");
         require(status.snapshot().full_scan_cycle_s == 395.0,
                 "Full scan cycle should parse");
+        require(status.snapshot().scan_program_mode == "scheduled_multi_elevation"
+                    && status.snapshot().active_scan_pattern == "conical_scan",
+                "Active scan program and pattern should parse");
+        require(status.snapshot().elevation_cycle_policy == "round_robin"
+                    && status.snapshot().scheduled_elevations_deg.size() == 2
+                    && status.snapshot().active_ppi_elevation_deg == 5.0,
+                "Multi-elevation round-robin schedule should parse");
 
         auto telemetry_frame = lidar_protocol::make_frame(
-            lidar_protocol::FrameType::status,
+            lidar_protocol::FrameType::telemetry,
             "2026-05-30T08:00",
             lidar_core::Json::Object{
                 {"site_id", "site-001"},
                 {"window_transmission", 0.92},
+                {"gimbal_azimuth_deg", 122.5},
+                {"gimbal_elevation_deg", 5.0},
+                {"elevation_schedule_index", 1},
             });
         require(status.update_from_frame(telemetry_frame),
-                "Telemetry status should update model");
+                "Telemetry frame should update model");
         require(status.snapshot().device_model == "SIM-FIELD-PM-LIDAR",
                 "Telemetry status must not erase device capabilities");
         require(status.snapshot().pulse_repetition_hz == 20.0,
@@ -77,6 +94,12 @@ int main() {
                 "Telemetry status must preserve movement overhead");
         require(status.snapshot().full_scan_cycle_s == 395.0,
                 "Telemetry status must preserve full cycle seconds");
+        require(status.snapshot().gimbal_azimuth_deg == 122.5
+                    && status.snapshot().gimbal_elevation_deg == 5.0
+                    && status.snapshot().elevation_schedule_index == 1,
+                "Telemetry should update current gimbal pointing and schedule index");
+        require(status.snapshot().scheduled_elevations_deg.size() == 2,
+                "Telemetry must preserve the complete elevation schedule");
 
         lidar_client::ScanCycleMonitor monitor;
         monitor.observe_frame(raw_frame(0));
