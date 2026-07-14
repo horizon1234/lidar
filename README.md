@@ -26,7 +26,7 @@ make                 # 构建服务端、客户端、测试和教学算例
 make server          # bin/lidar_sim_server
 make client          # bin/lidar_gui
 make examples        # 三个纯 C++ 教学算例
-make test            # 构建并运行四项设备测试
+make test            # 构建并运行五项设备测试
 make clean           # 删除 build/
 make pristine        # 删除 build/ 和 bin/
 ```
@@ -45,7 +45,8 @@ ctest --test-dir build --output-on-failure
 
 - `lidar_device_playback_timing_test`：采集驻留和播放倍率；
 - `lidar_client_device_telemetry_test`：状态增量合并和周期完整性；
-- `lidar_client_frame_processor_test`：四通道拼接、反演和 PM 标定边界；
+- `lidar_client_frame_processor_test`：四通道拼接、逐 bin QC、反演和组合标定边界；
+- `lidar_client_sim_device_pipeline_test`：5334 距离门仿真设备到客户端的端到端处理；
 - `lidar_sim_device_ylj5_test`：公开规格、帧协议、扫描轮换和控制命令。
 
 完整规格双周期正演可单独执行：
@@ -124,8 +125,8 @@ QT_QPA_PLATFORM=offscreen ./bin/lidar_gui --screenshot /tmp/ylj5.png
 扫描完整性检查、四通道处理、Fernald/Klett 反演、湿度修正、ENU 投影和显示快照生成。
 GUI 主线程只绘图和响应操作。
 
-未加载站点标定时，客户端只显示干消光、退偏比和 QC，PM2.5、PM10 与热点保持为空。
-标定 JSON 必须包含：
+未同时加载接收机标定和站点 PM 标定时，客户端只显示干消光、退偏比和 QC，PM2.5、
+PM10 与热点保持为空。组合标定 JSON 必须包含：
 
 ```json
 {
@@ -134,12 +135,28 @@ GUI 主线程只绘图和响应操作。
   "pm25_intercept_ugm3": 0.0,
   "pm25_slope_ugm3_per_km": 0.0,
   "pm10_intercept_ugm3": 0.0,
-  "pm10_slope_ugm3_per_km": 0.0
+  "pm10_slope_ugm3_per_km": 0.0,
+  "receiver_calibration": {
+    "calibration_id": "device-serial-receiver-cal-001",
+    "detector_mode": "photon_counting",
+    "signal_unit": "mean_counts_per_pulse",
+    "range_zero_offset_m": 0.0,
+    "minimum_valid_range_m": 3.75,
+    "minimum_retrieval_overlap": 0.1,
+    "minimum_quantitative_overlap": 0.9,
+    "saturation_counts": 2000000.0,
+    "saturation_guard_fraction": 0.98,
+    "dead_time_loss_per_count": 0.0000025,
+    "maximum_dead_time_occupancy": 0.8,
+    "afterpulse_kernel": [0.02]
+  }
 }
 ```
 
-系数必须来自目标站点与参考颗粒物仪器的共址实验，示例零值仅说明结构。完整流程见
-[客户端实时处理链](docs/algorithm_processing_chain.md)。
+PM 系数必须来自目标站点共址实验，接收机字段必须来自对应设备序列号的暗帧、线性度、
+overlap 和距离零点标定。示例数值只匹配当前仿真器，不能作为实机标定使用。模板见
+`configs/ylj5_calibration.template.json`，完整流程见
+[客户端算法初学者指南与当前实现](docs/algorithm_processing_chain.md)。
 
 ## 控制命令
 
@@ -168,7 +185,7 @@ GUI 可发送 `start`、`resume`、`pause`、`stop`、`get_status` 和 `set_scan
 | `cpp/protocol/` | 当前仿真层 JSONL 帧和四通道序列化 |
 | `cpp/client/` | Linux Qt GUI、工作线程、实时处理和可视化 |
 | `cpp/include/`、`cpp/src/` | 正演与实时反演共享核心 |
-| `cpp/tests/` | 四项设备回归测试 |
+| `cpp/tests/` | 五项设备回归测试 |
 | `cpp/examples/` | 纯 C++ 教学算例 |
 | `docs/` | 设备工程文档和知识学习资料 |
 | `experiments/` | YLJ5 实验记录模板 |
