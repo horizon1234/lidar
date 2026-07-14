@@ -1,128 +1,106 @@
-# LiDAR 算法处理链拆分说明
+# YLJ5 客户端实时处理链
 
-本文说明项目中的算法处理链如何拆成类，以及每一步对应的公开论文/工程依据。商用设备的完整算法实现通常不公开，因此本项目采用公开文献中成熟的 LiDAR 处理方法，并保留可替换接口。
+更新日期：2026-07-14。
 
-## 1. 类化处理链
+本文描述 `cpp/client` 当前实际执行的实时处理路径。商用设备的厂商算法、通道标定矩阵
+和 PM 系数并未公开，因此项目只采用可追溯的公开方法；无法由公开证据确定的环节会输出
+QC 或保持产品为空，不用经验常数冒充厂家结果。
 
-单条 profile 的实时处理由 `SingleProfileProcessingChain` 串联：
+## 1. 线程和周期边界
 
-```text
-LidarProfile
-  -> BackgroundPreprocessStep
-  -> FernaldInversionStep
-  -> HumidityCorrectionStep
-  -> CoordinateProjectionStep
-  -> ProcessedProfile
-```
-
-体扫热点检测由 `HotspotDetectionStep` 处理：
+Linux Qt 客户端只有 GUI 模式。`LidarClientWorker` 被移动到专用 `QThread`，线程内依次
+执行：
 
 ```text
-vector<ProcessedProfile> PPI/RHI/volume profiles
-  -> HotspotDetectionStep
-  -> vector<Hotspot>
+QTcpSocket 收包
+  -> JSONL 拆帧和协议解析
+  -> DeviceStatusModel 增量合并
+  -> ScanCycleMonitor 完整性统计
+  -> FrameProcessor L0-L2 处理
+  -> heartbeat 或时间戳变化时封口 StepResult
+  -> 预计算 PPI 色标、ENU 栅格和垂直显示快照
+  -> queued signal 交给 GUI
 ```
 
-这样拆分后，每一步都可以独立替换。例如后续拿到 Raman 通道时，可以把 `FernaldInversionStep` 替换成 Raman extinction retrieval；拿到真实 ground PM 标定集时，可以替换 PM 标定模型。
+GUI 线程只接收 `shared_ptr<const StepResult>`、`shared_ptr<const DisplaySnapshot>` 和设备
+状态快照，不访问 socket，也不执行背景扣除、反演、标定、热点检测或百万点 PPI 栅格化。
+断开连接和关闭窗口时，worker 会先封口尚未完成的周期。
 
-## 2. L0 -> L1 预处理
+## 2. 输入校验
 
-类：`BackgroundPreprocessStep`
+每条 `lidar_raw` 进入处理链前检查：
 
-输入：
+- 距离轴至少 8 个 bin，严格递增且数值有限；
+- 兼容主通道 `raw_counts` 和 `overlap` 与距离轴等长；
+- 方位角位于 `[0, 360)`，仰角位于 `[0, 180]`；
+- 每条物理接收通道的计数和 overlap 与距离轴等长。
 
-- `raw_counts`
-- `background_counts`
-- `laser_energy_mj`
-- `overlap`
-- `ranges_m`
+旧设备适配器若完全缺失主通道 overlap，会临时填充 1.0 并添加
+`main-channel-overlap-assumed-unity`；非空但尺寸错误的数据会被拒绝。结构或数值不合法的
+帧不会进入反演，周期结果记录 `malformed-or-unprocessable-lidar-frame`。
 
-输出：
+## 3. 接收通道预处理
 
-- `l1_signal`
-- `attenuated_backscatter`
-- `snr`
-- `qc_flags`
+YLJ5 仿真帧携带近场/远场与平行/垂直偏振四条路径。当前定量主信号使用
+`near_parallel_532nm` 和 `far_parallel_532nm`；两条垂直偏振通道会接受形状校验并随原始
+廓线保留，退偏比使用协议中的 `depolarization_ratio`。在获得实机偏振串扰矩阵前，项目
+不会伪造偏振标定。
 
-处理逻辑：
+每条参与拼接的通道执行：
 
 ```text
-background_corrected = max(raw_counts - background_counts, 0)
-energy_normalized = background_corrected / laser_energy_mj
-overlap_corrected = energy_normalized / overlap(r)
-attenuated_backscatter = overlap_corrected * r^2
-snr = background_corrected / sqrt(raw_counts + background_counts)
+background = 末端约 5% bin 的中位数
+signal = max(raw - background, 0)
+corrected = signal / relative_gain / max(overlap, overlap_min)
+snr = signal * sqrt(integrated_pulses) / sqrt(raw + background)
 ```
 
-工程意义：
+在 75-300 m 默认交叉区内，只有近、远场 SNR 均达到门限的 bin 才参与比例估计。比例
+样本不少于 5 个时取中位数作为远场尺度，随后按距离做线性权重拼接；某一路 SNR 不足时
+自动偏向另一条路径。输出包含：
 
-- 商用 LiDAR 软件通常会保留原始信号、range corrected signal、SNR/CNR 和 QC 标志。
-- full overlap 前的近场数据必须标记为低可信，不能直接当作污染高值。
+- 背景、增益和 overlap 修正后的 `l1_signal`；
+- 能量归一和距离平方修正后的 `attenuated_backscatter`；
+- 脉冲积分修正后的 `snr`；
+- `near-far-channels-glued`、`channel-gluing-ratio-unverified` 等 QC。
 
-## 3. Fernald/Klett 弹性反演
+这套近远场 gluing 顺序与 EARLINET Single Calculus Chain 的公开处理分层一致，但具体
+交叉区、增益和 overlap 仍是待实机标定参数，不是 YLJ5 厂家值。
 
-类：`FernaldInversionStep`
+## 4. 分子参考场
 
-输入：
+实时协议默认不发送仿真真值和分子场。若 `molecular_backscatter` 或
+`molecular_extinction` 缺失，客户端按 532 nm 标准大气近似生成分子参考：采用 8 km
+指数尺度高度和波长四次方缩放，并添加 `molecular-reference-standard-atmosphere`。
 
-- `attenuated_backscatter`
-- 分子后向散射/消光
-- aerosol lidar ratio
-- 远端参考后向散射
+该回退能保证反演有明确边界条件，但不能替代站点探空、温压廓线或标准气象模式。接入
+真实设备后，应优先用同期气象廓线计算分子消光和后向散射。
 
-输出：
+## 5. Fernald/Klett 弹性反演
 
-- `extinction`
-- `aerosol_backscatter`
-
-依据：
-
-- Klett, 1981, "Stable analytical inversion solution for processing lidar returns", Applied Optics.
-- Fernald, 1984, "Analysis of atmospheric lidar observations: some comments", Applied Optics.
-
-当前实现是后向积分的 elastic-backscatter 近似。它适合无 Raman 通道、只有单波长弹性回波的工程原型，但依赖 lidar ratio 和远端参考区，必须做敏感性分析。
-
-## 4. 湿度修正
-
-类：`HumidityCorrectionStep`
-
-输入：
-
-- 湿消光 `extinction`
-- `relative_humidity`
-
-输出：
-
-- `dry_extinction`
-
-处理逻辑：
+`FernaldInversionStep` 使用远端参考区和假设的气溶胶激光雷达比，从远端向近端反向
+积分，输出消光和气溶胶后向散射。该方法建立在经典 Klett/Fernald 弹性后向散射反演上：
 
 ```text
-dry_extinction = extinction / g(RH)
+attenuated_backscatter + molecular profile
+  -> 远端参考尺度
+  -> 双程透过率反向积分
+  -> aerosol backscatter
+  -> extinction = molecular extinction + lidar_ratio * aerosol backscatter
 ```
 
-工程意义：
+单波长弹性回波无法独立确定激光雷达比，结果必须结合参考区、天气掩膜和敏感性分析。
+当前代码还没有厂商云雾降水分类，也没有逐 bin 不确定度传播。
 
-- 颗粒物吸湿增长会增强散射/消光。
-- 如果不做湿度修正，PM 估计会把高湿导致的光学增强误判为质量浓度升高。
+## 6. 湿度修正和坐标投影
 
-当前实现采用简化 κ-Kohler 风格增长因子。真实项目中应按站点和气溶胶类型标定。
+`HumidityCorrectionStep` 用简化的 κ-Kohler 风格增长因子把环境湿消光修正到干参考状态：
 
-## 5. 坐标投影
+```text
+dry_extinction = extinction / g(relative_humidity)
+```
 
-类：`CoordinateProjectionStep`
-
-输入：
-
-- range
-- azimuth
-- elevation
-
-输出：
-
-- ENU 点 `[east, north, up]`
-
-处理逻辑：
+`CoordinateProjectionStep` 再把距离、方位和仰角转换为本地 ENU：
 
 ```text
 East  = r * cos(elevation) * sin(azimuth)
@@ -130,64 +108,66 @@ North = r * cos(elevation) * cos(azimuth)
 Up    = r * sin(elevation)
 ```
 
-工程意义：
+因此 0 度水平圈提供近地平面的二维分布，5 度锥扫提供随距离升高的浅锥层，90 度观测
+提供垂直廓线。当前 0/5/90 度调度不是密集多仰角体扫，不能仅凭单个周期宣称完整三维
+层析重建。
 
-- 3D 污染云、热点质心、走航车轨迹和 GIS 地图都需要统一空间坐标。
+## 7. PM 标定门控
 
-## 6. PM 标定
-
-当前 PM 标定仍在批处理主流程中完成：
+光学消光不能用一个通用固定倍数直接变成 PM2.5/PM10。只有加载经过目标站点共址比对的
+标定 JSON 后，客户端才执行：
 
 ```text
-dry_extinction + RH + hotspot proxy + station offset -> PM2.5 / PM10
+PM2.5 = max(0, intercept25 + slope25 * dry_extinction)
+PM10  = max(0, intercept10 + slope10 * dry_extinction)
 ```
 
-原因是 PM 标定不是单条 profile 能独立完成的步骤，它依赖地面 PM 站、训练/验证切分、站点偏置和漂移监控。
+标定文件必须包含：
 
-后续建议把它继续拆成：
+```json
+{
+  "calibration_id": "site-cal-001",
+  "valid_from": "2026-07-01",
+  "pm25_intercept_ugm3": 0.0,
+  "pm25_slope_ugm3_per_km": 0.0,
+  "pm10_intercept_ugm3": 0.0,
+  "pm10_slope_ugm3_per_km": 0.0
+}
+```
 
-- `FeatureBuilder`
-- `PmCalibrationTrainer`
-- `PmEstimator`
-- `StationDriftMonitor`
+未标定时，`pm25`、`pm10` 和 `hotspots` 保持空数组，周期添加
+`pm-calibration-missing`，GUI 只显示干消光、退偏比和 QC。标定有效时才允许生成定量 PM
+图层并执行浓度热点检测。当前线性模型只是明确的适配接口，正式系数仍需训练/验证切分、
+漂移监控和不确定度报告。
 
-## 7. 热点检测
+## 8. 周期质量控制
 
-类：`HotspotDetectionStep`
+`heartbeat` 或时间戳变化触发周期封口。`StepResult` 汇总有效/拒绝射线数、PPI/垂直
+射线数、仰角层数、平均处理时延、标定 ID 和去重后的 QC。`ScanCycleMonitor` 根据
+`scan_cycle_id`、`ray_index`、`rays_in_cycle` 识别重复和缺失射线；不完整周期添加
+`scan-cycle-incomplete`。
 
-输入：
+回归测试 `TestClientFrameProcessor.cpp` 固定验证以下边界：
 
-- 同一时间步的 PPI/volume `ProcessedProfile`
+- 缺失分子场时标准大气回退不崩溃；
+- 四通道输入执行近远场平行通道拼接；
+- 未标定时 PM 数组为空；
+- 加载有效标定后 PM 与距离轴等长。
 
-输出：
+## 9. 仍需实机资料
 
-- `Hotspot`
+达到实机级还原还缺少：厂家原始帧/SDK、ADC 或光子计数单位、通道增益、overlap、偏振
+串扰、距离零点、背景区定义、激光能量监测值、气象输入、厂家 L1/L2 对照产品以及站点
+PM 共址标定数据。拿到资料后应通过独立适配器和 golden sample 测试接入，而不是修改
+当前 QC 把假设隐藏起来。
 
-处理逻辑：
+## 10. 公开依据
 
-- 绝对 PM 阈值
-- 相对背景异常
-- 干消光相对异常
-- 连通域过滤
-- PM 加权质心
-
-工程意义：
-
-- 工地、城市和走航车应用里，业务目标通常不是单个 bin 的浓度，而是污染团的位置、范围、趋势和事件生命周期。
-
-## 8. 更接近商用设备的后续升级
-
-如果要继续逼近在售设备软件，优先级如下：
-
-1. Raman 或多波长通道：用 Raman extinction 替代固定 lidar ratio 假设。
-2. 云/雾/降水分类：在反演前做 weather mask。
-3. 动态 lidar ratio：按气溶胶类型、湿度、退偏振比选择。
-4. 不确定度传播：每个 bin 输出 PM 置信度，而不是只输出浓度。
-5. 真实文件 replay：支持 CL61-like NetCDF、HPL-like ASCII、Licel-like raw。
-
-## 9. 参考资料
-
-- Klett, J. D. 1981. Stable analytical inversion solution for processing lidar returns. Applied Optics. https://doi.org/10.1364/AO.20.000211
-- Fernald, F. G. 1984. Analysis of atmospheric lidar observations: some comments. Applied Optics. https://doi.org/10.1364/AO.23.000652
-- Ansmann, A., Riebesell, M., and Weitkamp, C. 1990. Measurement of atmospheric aerosol extinction profiles with a Raman lidar. Optics Letters. https://opg.optica.org/ol/fulltext.cfm?uri=ol-15-13-746
-- Müller, D., Wandinger, U., and Ansmann, A. 1999. Microphysical particle parameters from extinction and backscatter lidar data by inversion with regularization. Applied Optics. https://opg.optica.org/ao/fulltext.cfm?uri=ao-38-12-2346
+- D'Amico et al., 2015, EARLINET Single Calculus Chain, Atmos. Meas. Tech.,
+  https://doi.org/10.5194/amt-8-4891-2015
+- Klett, 1981, Stable analytical inversion solution for processing lidar returns,
+  https://doi.org/10.1364/AO.20.000211
+- Fernald, 1984, Analysis of atmospheric lidar observations: some comments,
+  https://doi.org/10.1364/AO.23.000652
+- Ansmann et al., 1990, Independent measurement of extinction and backscatter profiles,
+  https://doi.org/10.1364/OL.15.000746

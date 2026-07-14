@@ -2,6 +2,17 @@
 
 > **目标**：将现有的"单进程批处理验证骨架"重构为"模拟 LiDAR 服务端 → 主控客户端（预处理 + 反演 + 闭环逻辑）→ UI 显示"三层架构，同时保留现有算法链的正确性。
 
+> **文档状态（2026-07-14）**：本文是重构前的设计记录，不是当前接口手册。三层目录和
+> 共享核心库已经落地，但第 4.2、4.3 节的 `ScanFrame`、`ControlMessage`、
+> `generate_next_frame()` 和缓存式 `SimDevice` 伪代码已被替换。当前实现以
+> `lidar_protocol::Frame`、逐周期 `SimDevice::stream_scan_cycle()` 和 JSONL
+> `command/command_result` 为准。YLJ5 设备规格见 [ylj5_fidelity.md](ylj5_fidelity.md)，
+> 当前仿真与帧协议见 [realistic_lidar_simulation.md](realistic_lidar_simulation.md)。
+> 本文后续出现的 headless 客户端、可选 Qt、`LIDAR_ENABLE_QT` 和
+> `lidar_control_client` 均为已废弃方案。当前客户端仅支持 Linux Qt6，目标名为
+> `lidar_gui`；网络和处理统一运行在专用 `QThread`。当前处理接口见
+> [algorithm_processing_chain.md](algorithm_processing_chain.md)。
+
 ---
 
 ## 1. 现状分析
@@ -348,6 +359,10 @@ FernaldResult fernald_inversion(
 
 ### 4.2 通信协议 `lidar_protocol`
 
+> 以下代码块保留原始设计思路，仅用于解释为什么拆出协议层。当前代码已经支持
+> `status`、`telemetry`、`lidar_raw`、`camera`、`lidar_product`、`command`、
+> `command_result`、`heartbeat` 和 `alarm`；请勿继续实现这里的旧 `ScanFrame` 接口。
+
 #### 帧定义
 
 ```cpp
@@ -415,6 +430,10 @@ struct ControlMessage {
 ---
 
 ### 4.3 模拟 LiDAR 服务端 `lidar_sim_server`
+
+> 以下 `DeviceState`、`generate_next_frame()` 和多客户端线程模型也是历史草案。当前
+> `SimDevice` 按 YLJ5 公开规格惰性生成单周期数据，`TcpServer` 维护一个活动客户端，
+> 服务端通过逐帧回调控制内存峰值，并使用互斥状态机处理启停、暂停和扫描配置命令。
 
 #### 职责
 

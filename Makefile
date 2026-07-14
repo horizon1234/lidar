@@ -4,7 +4,7 @@
 # 用法：
 #   make              编译全部（首次会自动 cmake 配置）
 #   make server       只编译 lidar_sim_server
-#   make client       只编译 lidar_control_client
+#   make client       只编译 Linux Qt 客户端 lidar_gui
 #   make protocol     只编译 lidar_protocol 静态库
 #   make core         只编译 lidar_core（接口库）
 #   make tests        编译测试目标
@@ -27,7 +27,7 @@ CMAKE_BUILD := cmake --build $(BUILD_DIR) -j$(JOBS)
 # 所有可执行文件列表（与 bin/ 中的产物对应）
 EXES := \
 	lidar_sim_server        \
-	lidar_control_client    \
+	lidar_gui               \
 	lidar_run_full_demo     \
 	lidar_pipeline_test     \
 	lidar_closed_loop_test  \
@@ -68,8 +68,8 @@ server: config
 
 .PHONY: client
 client: config
-	$(CMAKE_BUILD) --target lidar_control_client
-	@echo "✓ client 已编译 → $(BIN_DIR)/lidar_control_client"
+	$(CMAKE_BUILD) --target lidar_gui
+	@echo "✓ Linux Qt client 已编译 → $(BIN_DIR)/lidar_gui"
 
 .PHONY: protocol
 protocol: config
@@ -109,7 +109,7 @@ run-server: server
 
 .PHONY: run-client
 run-client: client
-	./$(BIN_DIR)/lidar_control_client
+	./$(BIN_DIR)/lidar_gui
 
 # ============================================================================
 # 清理
@@ -131,7 +131,7 @@ list:
 	@echo "可用目标："
 	@echo "  all          编译全部"
 	@echo "  server       只编译仿真服务器 lidar_sim_server"
-	@echo "  client       只编译主控客户端 lidar_control_client"
+	@echo "  client       只编译 Linux Qt 主控客户端 lidar_gui"
 	@echo "  protocol     只编译协议库"
 	@echo "  core         只编译核心库"
 	@echo "  examples     编译第 19 章教学算例"

@@ -2,6 +2,14 @@
 
 本文把当前仓库从“方案文档”补到“可投中高级算法工程师岗位的项目骨架”。重点不是 UI，而是能回答算法面试中的六类问题：算法主链、数据资产、评测、工程化、演示闭环和中高级深度。当前仓库在保留 Python 参考实现的同时，已经补了一版 C++ 主链骨架，便于往中高级算法工程和工程化落地方向继续推进。
 
+当前仓库有两条彼此独立但共享核心算法的数据路径：
+
+1. 批处理/公开数据路径：通用 simulation、Cloudnet hybrid、Open-Meteo、评测和静态 Demo。
+2. 实时设备路径：面向 `YLJ5 / AGHJ-I-LIDAR(MPL)` 的 TCP JSONL 仿真服务、主控客户端和闭环组件。
+
+第二条路径只在公开证据范围内还原具体设备。PRF、脉冲能量、接收增益和厂家私有协议
+仍属于假设或未知，详见 [YLJ5 仿真保真说明](ylj5_fidelity.md)。
+
 ## 1. 算法主链
 
 当前最小可运行算法链已经落地在代码里，对应关系如下：
@@ -141,12 +149,15 @@
 | 目标 | 当前实现 |
 | --- | --- |
 | C++ 主链 | `cpp/` + `CMakeLists.txt`，覆盖 simulation 主链、Cloudnet hybrid 本地读取、batch、demo、live HTTP API 和 `--once` 摘要输出 |
+| YLJ5 实时设备 | `cpp/server/`，覆盖公开规格校验、5334 距离门、双望远镜四通道、惰性周期生成和控制状态机 |
+| 实时帧协议 | `cpp/protocol/`，覆盖 status/telemetry/lidar_raw/camera/lidar_product/command/command_result/alarm JSONL 帧 |
+| 主控客户端 | `cpp/client/`，Linux Qt GUI；专用 `QThread` 覆盖网络、协议、设备状态、扫描完整性和 L0-L2 处理，主线程只渲染快照 |
 | 算法模块 | `lidar_core/` |
 | 配置 | `configs/DefaultPipeline.json` |
 | API | `services/api/server.py` + `cpp/apps/api_server.cpp` |
 | 任务调度 / 批处理 | `services/workers/run_batch.py` |
 | 可复现实验脚本 | `scripts/build_demo_assets.py`、`scripts/fetch_public_ground_data.py`、`cpp/apps/fetch_public_ground_data.cpp`、`cpp/apps/fetch_cloudnet_public_sample.cpp` |
-| 测试 | `tests/test_pipeline.py` |
+| 测试 | Python `tests/` + C++ `cpp/tests/`，包含端到端、闭环、播放时序、客户端遥测、四通道处理/PM 门控和 YLJ5 设备测试 |
 | 公开数据资产说明 | `data/public/README.md` |
 | 实验记录模板 | `experiments/experiment_log_template.md` |
 
@@ -161,6 +172,15 @@
 5. 通过 Python 或 C++ 的 HTTP API 读取摘要结果，也可以用 C++ `--once` 输出摘要 JSON
 6. 用单元测试验证 Python 基线结构，并保留 C++ 断言测试入口
 
+实时设备路径额外具备：
+
+1. 服务端发布设备能力、合成遥测、四通道原始射线、相机能力和快速产品；
+2. 客户端发送启停、暂停、状态查询和扫描配置命令；
+3. 服务端先校验完整配置副本，再返回结构化 `command_result`；
+4. 逐周期生成和逐帧发送避免缓存 180 个全规格周期；
+5. 全规格烟雾测试跨两个周期覆盖 0 度水平、5 度锥形和 90 度垂直观测；每周期
+   181 条射线，每条 5334 bins 和四物理通道。
+
 ### 4.3 当前仍缺的工程项
 
 如果要进一步变成真实交付项目，下一步应该补：
@@ -171,6 +191,7 @@
 - 更完整的配置分层
 - CI、代码格式化和类型检查
 - 真正的历史回放和用户权限
+- YLJ5 厂商私有协议适配、实机原始帧回放和光机标定文件
 
 ## 5. Demo 闭环
 
