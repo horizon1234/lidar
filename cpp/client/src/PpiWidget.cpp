@@ -23,6 +23,8 @@ void PpiWidget::set_snapshot(const DisplaySnapshot& snapshot) {
     max_range_m_ = snapshot.ppi_max_range_m;
     color_max_ = snapshot.ppi_color_max;
     ray_count_ = snapshot.ppi_ray_count;
+    valid_bin_count_ = snapshot.ppi_valid_bin_count;
+    masked_bin_count_ = snapshot.ppi_masked_bin_count;
     update();
 }
 
@@ -77,13 +79,17 @@ void PpiWidget::paintEvent(QPaintEvent*) {
     painter.drawText(QRect(16, 8, width() - 32, 24), Qt::AlignLeft | Qt::AlignVCenter, title_);
     painter.setFont(QFont());
     painter.setPen(QColor(85, 99, 108));
+    const QString footer = QStringLiteral(
+        "%1 | 射线 %2 | 有效/屏蔽 %3/%4 | 上限 %5")
+        .arg(field_label_)
+        .arg(ray_count_)
+        .arg(valid_bin_count_)
+        .arg(masked_bin_count_)
+        .arg(color_max_, 0, 'g', 4);
     painter.drawText(
         QRect(16, height() - 26, width() - 32, 20),
         Qt::AlignLeft | Qt::AlignVCenter,
-        QStringLiteral("%1  |  %2 条射线  |  色标上限 %3")
-            .arg(field_label_)
-            .arg(ray_count_)
-            .arg(color_max_, 0, 'g', 4));
+        painter.fontMetrics().elidedText(footer, Qt::ElideRight, width() - 32));
 }
 
 } // namespace lidar_client

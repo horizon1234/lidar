@@ -24,6 +24,8 @@ struct DisplaySnapshot {
     double ppi_max_range_m = 5000.0;              ///< 方位视图显示半径（米）。
     double ppi_color_max = 0.0;                   ///< 方位色标 98% 分位上限。
     int ppi_ray_count = 0;                        ///< 参与栅格化的方位射线数量。
+    int ppi_valid_bin_count = 0;                  ///< 实际参与绘制的有效距离门数量。
+    int ppi_masked_bin_count = 0;                 ///< 被质量控制排除的距离门数量。
     std::vector<double> vertical_heights_m;       ///< 最近垂直廓线的相对高度（米）。
     std::vector<double> vertical_dry_extinction;  ///< 最近垂直廓线的干消光。
     std::vector<double> vertical_depolarization;  ///< 最近垂直廓线的体退偏比。

@@ -52,9 +52,13 @@ void AlarmPanel::update_data(const StepResult& result) {
     }
 
     QString html = QStringLiteral("<h3>周期质量控制</h3>");
-    html += QStringLiteral("<p>原始射线：%1<br>拒绝射线：%2<br>平均处理：%3 ms</p>")
+    html += QStringLiteral(
+        "<p>原始射线：%1<br>拒绝射线：%2<br>有效距离门：%3<br>屏蔽距离门：%4"
+        "<br>平均处理：%5 ms</p>")
         .arg(result.raw_count)
         .arg(result.rejected_count)
+        .arg(result.valid_bin_count)
+        .arg(result.masked_bin_count)
         .arg(result.mean_processing_latency_ms, 0, 'f', 2);
     if (!pm_calibrated_) {
         html += QStringLiteral("<p><b>PM 未标定：</b>当前仅展示消光与退偏产品，不生成浓度告警。</p>");

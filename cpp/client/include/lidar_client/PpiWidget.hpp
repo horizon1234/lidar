@@ -37,6 +37,8 @@ private:
     double max_range_m_ = 5000.0;             ///< 当前显示半径（米）。
     double color_max_ = 0.0;                  ///< 当前色标 98% 分位上限。
     int ray_count_ = 0;                       ///< 当前参与绘制的方位射线数。
+    int valid_bin_count_ = 0;                 ///< 当前有效距离门数量。
+    int masked_bin_count_ = 0;                ///< 当前被屏蔽距离门数量。
 };
 
 } // namespace lidar_client

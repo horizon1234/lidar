@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 
 namespace lidar_client {
 
@@ -20,6 +21,17 @@ const std::vector<double>& ppi_field(
     const lidar_core::ProcessedProfile& profile,
     bool display_pm) {
     return display_pm ? profile.pm25 : profile.dry_extinction;
+}
+
+bool display_bin_usable(
+    const lidar_core::ProcessedProfile& profile,
+    std::size_t index,
+    bool display_pm) {
+    if (profile.bin_quality.empty()) return true;
+    if (index >= profile.bin_quality.size()) return false;
+    return display_pm
+        ? lidar_core::bin_is_usable_for_quantitative_product(profile.bin_quality[index])
+        : lidar_core::bin_is_usable_for_retrieval(profile.bin_quality[index]);
 }
 
 /** @brief 计算正有限值的 98% 分位，抑制孤立异常点拉伸色标。 */
@@ -70,6 +82,10 @@ void select_vertical_profile(const StepResult& result, DisplaySnapshot& snapshot
             iterator->dry_extinction.begin(), iterator->dry_extinction.begin() + count);
         const double elevation = iterator->profile.elevation_deg * std::acos(-1.0) / 180.0;
         for (std::size_t index = 0; index < count; ++index) {
+            if (!display_bin_usable(*iterator, index, false)) {
+                snapshot.vertical_dry_extinction[index] =
+                    std::numeric_limits<double>::quiet_NaN();
+            }
             if (index < iterator->enu_points_m.size()
                 && iterator->enu_points_m[index].size() >= 3) {
                 snapshot.vertical_heights_m.push_back(iterator->enu_points_m[index][2]);
@@ -82,6 +98,12 @@ void select_vertical_profile(const StepResult& result, DisplaySnapshot& snapshot
             snapshot.vertical_depolarization.assign(
                 iterator->profile.depolarization_ratio.begin(),
                 iterator->profile.depolarization_ratio.begin() + count);
+            for (std::size_t index = 0; index < count; ++index) {
+                if (!display_bin_usable(*iterator, index, false)) {
+                    snapshot.vertical_depolarization[index] =
+                        std::numeric_limits<double>::quiet_NaN();
+                }
+            }
         }
         return;
     }
@@ -106,8 +128,15 @@ DisplaySnapshot build_display_snapshot(const StepResult& result, double ppi_max_
     for (const auto& profile : result.processed_profiles) {
         if (profile.profile.scan_mode != "ppi") continue;
         ++snapshot.ppi_ray_count;
-        for (double value : ppi_field(profile, display_pm)) {
-            if (std::isfinite(value) && value > 0.0) finite_values.push_back(value);
+        const auto& values = ppi_field(profile, display_pm);
+        for (std::size_t index = 0; index < values.size(); ++index) {
+            if (!display_bin_usable(profile, index, display_pm)
+                || !std::isfinite(values[index])) {
+                ++snapshot.ppi_masked_bin_count;
+                continue;
+            }
+            ++snapshot.ppi_valid_bin_count;
+            if (values[index] > 0.0) finite_values.push_back(values[index]);
         }
     }
     snapshot.ppi_color_max = percentile_98(std::move(finite_values));
@@ -124,7 +153,9 @@ DisplaySnapshot build_display_snapshot(const StepResult& result, double ppi_max_
         const auto& values = ppi_field(profile, display_pm);
         const std::size_t count = std::min(values.size(), profile.enu_points_m.size());
         for (std::size_t index = 0; index < count; ++index) {
-            if (!std::isfinite(values[index]) || profile.enu_points_m[index].size() < 2) continue;
+            if (!display_bin_usable(profile, index, display_pm)
+                || !std::isfinite(values[index])
+                || profile.enu_points_m[index].size() < 2) continue;
             const double east = profile.enu_points_m[index][0];
             const double north = profile.enu_points_m[index][1];
             if (std::hypot(east, north) > snapshot.ppi_max_range_m) continue;

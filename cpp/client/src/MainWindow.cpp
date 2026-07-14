@@ -122,7 +122,7 @@ void MainWindow::setup_ui() {
     toolbar->addSeparator();
     calibration_action_ = toolbar->addAction(
         style()->standardIcon(QStyle::SP_DialogOpenButton), QStringLiteral("加载标定"));
-    calibration_action_->setToolTip(QStringLiteral("加载经过站点比对验证的 PM 标定 JSON"));
+    calibration_action_->setToolTip(QStringLiteral("加载接收机与站点 PM 组合标定 JSON"));
 
     auto* central = new QWidget(this);
     auto* central_layout = new QVBoxLayout(central);
@@ -251,7 +251,7 @@ void MainWindow::on_disconnect() {
 void MainWindow::on_load_calibration() {
     const QString file_path = QFileDialog::getOpenFileName(
         this,
-        QStringLiteral("加载站点 PM 标定"),
+        QStringLiteral("加载接收机与站点 PM 组合标定"),
         QString(),
         QStringLiteral("JSON 标定文件 (*.json);;所有文件 (*)"));
     if (!file_path.isEmpty()) {

@@ -8,6 +8,7 @@
 #include <QPainterPath>
 
 #include <algorithm>
+#include <cmath>
 
 namespace lidar_client {
 
@@ -49,23 +50,38 @@ void VerticalProfileWidget::paintEvent(QPaintEvent*) {
     }
 
     const double max_height = std::max(heights_m_.back(), 1.0);
-    const double max_extinction = std::max(
-        *std::max_element(dry_extinction_.begin(), dry_extinction_.end()), 1e-9);
-    double max_depolarization = 1.0;
-    if (!depolarization_.empty()) {
-        max_depolarization = std::max(
-            *std::max_element(depolarization_.begin(), depolarization_.end()), 0.01);
+    double max_extinction = 1e-9;
+    for (double value : dry_extinction_) {
+        if (std::isfinite(value)) max_extinction = std::max(max_extinction, value);
+    }
+    double max_depolarization = 0.01;
+    for (double value : depolarization_) {
+        if (std::isfinite(value)) max_depolarization = std::max(max_depolarization, value);
     }
 
     QPainterPath extinction_path;
     QPainterPath depolarization_path;
+    bool extinction_started = false;
+    bool depolarization_started = false;
     for (std::size_t index = 0; index < heights_m_.size(); ++index) {
         const double y = plot.bottom() - heights_m_[index] / max_height * plot.height();
-        const double x_ext = plot.left() + std::clamp(dry_extinction_[index] / max_extinction, 0.0, 1.0) * plot.width();
-        if (index == 0) extinction_path.moveTo(x_ext, y); else extinction_path.lineTo(x_ext, y);
-        if (index < depolarization_.size()) {
+        if (index < dry_extinction_.size() && std::isfinite(dry_extinction_[index])) {
+            const double x_ext = plot.left()
+                + std::clamp(dry_extinction_[index] / max_extinction, 0.0, 1.0)
+                    * plot.width();
+            if (!extinction_started) extinction_path.moveTo(x_ext, y);
+            else extinction_path.lineTo(x_ext, y);
+            extinction_started = true;
+        } else {
+            extinction_started = false;
+        }
+        if (index < depolarization_.size() && std::isfinite(depolarization_[index])) {
             const double x_dep = plot.left() + std::clamp(depolarization_[index] / max_depolarization, 0.0, 1.0) * plot.width();
-            if (index == 0) depolarization_path.moveTo(x_dep, y); else depolarization_path.lineTo(x_dep, y);
+            if (!depolarization_started) depolarization_path.moveTo(x_dep, y);
+            else depolarization_path.lineTo(x_dep, y);
+            depolarization_started = true;
+        } else {
+            depolarization_started = false;
         }
     }
     painter.setPen(QPen(QColor(24, 128, 146), 2));
