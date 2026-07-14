@@ -17,7 +17,11 @@ std::string frame_type_to_string(FrameType type) {
     case FrameType::lidar_l1:   return "lidar_l1";
     case FrameType::ground_obs: return "ground_obs";
     case FrameType::status:     return "status";
+    case FrameType::telemetry:  return "telemetry";
+    case FrameType::camera:     return "camera";
+    case FrameType::lidar_product: return "lidar_product";
     case FrameType::command:    return "command";
+    case FrameType::command_result: return "command_result";
     case FrameType::hotspots:   return "hotspots";
     case FrameType::summary:    return "summary";
     case FrameType::alarm:      return "alarm";
@@ -31,7 +35,11 @@ FrameType string_to_frame_type(const std::string& text) {
     if (text == "lidar_l1")   return FrameType::lidar_l1;
     if (text == "ground_obs") return FrameType::ground_obs;
     if (text == "status")     return FrameType::status;
+    if (text == "telemetry")  return FrameType::telemetry;
+    if (text == "camera")     return FrameType::camera;
+    if (text == "lidar_product") return FrameType::lidar_product;
     if (text == "command")    return FrameType::command;
+    if (text == "command_result") return FrameType::command_result;
     if (text == "hotspots")   return FrameType::hotspots;
     if (text == "summary")    return FrameType::summary;
     if (text == "alarm")      return FrameType::alarm;
@@ -161,9 +169,55 @@ lidar_core::Json doubles_to_json_array(const std::vector<double>& values) {
     return lidar_core::Json(std::move(output));
 }
 
+lidar_core::Json channel_to_json(const lidar_core::LidarChannel& channel) {
+    // 通道距离轴与外层 profile 共用，只序列化通道自身的计数和 overlap，避免重复 ranges_m。
+    return lidar_core::Json::Object{
+        {"channel_id", channel.channel_id},
+        {"telescope", channel.telescope},
+        {"polarization", channel.polarization},
+        {"wavelength_nm", channel.wavelength_nm},
+        {"telescope_aperture_mm", channel.telescope_aperture_mm},
+        {"relative_gain", channel.relative_gain},
+        {"background_counts", channel.background_counts},
+        {"raw_counts", doubles_to_json_array(channel.raw_counts)},
+        {"overlap", doubles_to_json_array(channel.overlap)},
+    };
+}
+
+lidar_core::LidarChannel json_to_channel(const lidar_core::Json& json) {
+    // 所有字段按可选字段读取，允许旧客户端继续解析不含四通道的历史帧。
+    lidar_core::LidarChannel channel;
+    auto get_string = [&](const char* key) -> std::string {
+        return json.contains(key) && json.at(key).is_string()
+            ? json.at(key).string_value()
+            : "";
+    };
+    auto get_number = [&](const char* key, double fallback = 0.0) -> double {
+        return json.contains(key) && json.at(key).is_number()
+            ? json.at(key).number_value()
+            : fallback;
+    };
+    channel.channel_id = get_string("channel_id");
+    channel.telescope = get_string("telescope");
+    channel.polarization = get_string("polarization");
+    channel.wavelength_nm = get_number("wavelength_nm");
+    channel.telescope_aperture_mm = get_number("telescope_aperture_mm");
+    channel.relative_gain = get_number("relative_gain", 1.0);
+    channel.background_counts = get_number("background_counts");
+    if (json.contains("raw_counts")) {
+        channel.raw_counts = json_array_to_doubles(json.at("raw_counts"));
+    }
+    if (json.contains("overlap")) {
+        channel.overlap = json_array_to_doubles(json.at("overlap"));
+    }
+    return channel;
+}
+
 } // anonymous namespace
 
-lidar_core::Json profile_to_json(const lidar_core::LidarProfile& profile) {
+lidar_core::Json profile_to_json(
+    const lidar_core::LidarProfile& profile,
+    bool include_truth_fields) {
     lidar_core::Json obj = lidar_core::Json::Object{
         {"site_id", profile.site_id},
         {"timestamp", profile.timestamp},
@@ -181,15 +235,23 @@ lidar_core::Json profile_to_json(const lidar_core::LidarProfile& profile) {
         {"temperature_c", profile.temperature_c},
         {"wind_speed_ms", profile.wind_speed_ms},
         {"wind_dir_deg", profile.wind_dir_deg},
-        {"molecular_backscatter", doubles_to_json_array(profile.molecular_backscatter)},
-        {"molecular_extinction", doubles_to_json_array(profile.molecular_extinction)},
-        {"true_backscatter", doubles_to_json_array(profile.true_backscatter)},
-        {"true_extinction", doubles_to_json_array(profile.true_extinction)},
-        {"true_pm25", doubles_to_json_array(profile.true_pm25)},
-        {"true_pm10", doubles_to_json_array(profile.true_pm10)},
+        {"depolarization_ratio", doubles_to_json_array(profile.depolarization_ratio)},
     };
-    // true_hotspot_mask 是可选字段，单独添加以避免初始 map 过大
-    {
+
+    lidar_core::Json::Array channels;
+    channels.reserve(profile.channels.size());
+    for (const auto& channel : profile.channels) {
+        channels.emplace_back(channel_to_json(channel));
+    }
+    obj["channels"] = lidar_core::Json(std::move(channels));
+
+    if (include_truth_fields) {
+        obj["molecular_backscatter"] = doubles_to_json_array(profile.molecular_backscatter);
+        obj["molecular_extinction"] = doubles_to_json_array(profile.molecular_extinction);
+        obj["true_backscatter"] = doubles_to_json_array(profile.true_backscatter);
+        obj["true_extinction"] = doubles_to_json_array(profile.true_extinction);
+        obj["true_pm25"] = doubles_to_json_array(profile.true_pm25);
+        obj["true_pm10"] = doubles_to_json_array(profile.true_pm10);
         lidar_core::Json::Array mask_arr;
         mask_arr.reserve(profile.true_hotspot_mask.size());
         for (int v : profile.true_hotspot_mask) {
@@ -233,6 +295,14 @@ lidar_core::LidarProfile json_to_profile(const lidar_core::Json& json) {
     if (json.contains("true_pm25"))            profile.true_pm25 = json_array_to_doubles(json.at("true_pm25"));
     if (json.contains("true_pm10"))            profile.true_pm10 = json_array_to_doubles(json.at("true_pm10"));
     if (json.contains("true_hotspot_mask"))    profile.true_hotspot_mask = json_array_to_ints(json.at("true_hotspot_mask"));
+    if (json.contains("depolarization_ratio")) profile.depolarization_ratio = json_array_to_doubles(json.at("depolarization_ratio"));
+    if (json.contains("channels") && json.at("channels").is_array()) {
+        for (const auto& item : json.at("channels").array_items()) {
+            if (item.is_object()) {
+                profile.channels.push_back(json_to_channel(item));
+            }
+        }
+    }
 
     return profile;
 }

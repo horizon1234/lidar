@@ -1,6 +1,6 @@
 /**
  * @file LidarDemo.hpp
- * @brief Aggregate public API for the atmospheric LiDAR particulate monitoring demo.
+ * @brief 大气 LiDAR 颗粒物监测项目的聚合公共 API。
  */
 #pragma once
 
@@ -72,6 +72,17 @@ Json to_json_processed(const ProcessedProfile& value);
  * @return      JSON 对象
  */
 Json to_json_hotspot(const Hotspot& value);
+
+/**
+ * @brief 只执行正演并返回合成战役，不运行反演、评测或文件输出。
+ *
+ * 这是实时仿真设备使用的低内存入口。调用方可一次生成一个周期，避免通过临时 JSON
+ * 文件中转，也避免长期缓存整场战役。
+ *
+ * @param config 单周期正演配置。
+ * @return 站点、原始射线和可选地面观测。
+ */
+SyntheticCampaign generate_synthetic_campaign(const PipelineConfig& config);
 
 // ============================================================================
 // 顶层 API

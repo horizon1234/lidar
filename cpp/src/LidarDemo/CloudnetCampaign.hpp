@@ -158,6 +158,8 @@ CampaignData load_cloudnet_hybrid_campaign(const PipelineConfig& config) {
                     ranges_m,
                     laser_energy_mj,
                     background_counts,
+                    config.simulation.ppi_line_dwell_s,
+                    1.0,
                     config.simulation,
                     rng
                 );

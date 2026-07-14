@@ -187,8 +187,9 @@ SimulatedFields simulate_profile_fields(
  * @param[in] overlap          双轴重叠因子。
  * @param[in] ranges_m         距离 bin 序列（米）。
  * @param[in] laser_energy_mj  当前脉冲激光能量（mJ）。
- * @param[in] background_counts 探测器背景计数。
- * @param[in] system_constant  系统常数 C。
+ * @param[in] background_counts 单脉冲等效探测器背景计数。
+ * @param[in] integration_time_s 该 profile 的脉冲积分时间。
+ * @param[in] channel_gain 接收通道相对增益。
  * @param[in,out] rng          随机数引擎。
  * @return 含噪声的 raw_counts 序列。
  */
@@ -199,6 +200,8 @@ std::vector<double> simulate_raw_counts(
     const std::vector<double>& ranges_m,
     double laser_energy_mj,
     double background_counts,
+    double integration_time_s,
+    double channel_gain,
     const SimulationConfig& simulation,
     std::mt19937& rng
 ) {
@@ -206,6 +209,11 @@ std::vector<double> simulate_raw_counts(
     raw_counts.reserve(ranges_m.size());
     double optical_depth = 0.0;
     double step_km = ranges_m.size() > 1 ? (ranges_m[1] - ranges_m[0]) / 1000.0 : 0.05;
+    double integrated_pulses = std::max(
+        1.0,
+        std::round(std::max(simulation.pulse_repetition_hz, 0.0)
+            * std::max(integration_time_s, 0.0)));
+    double effective_gain = std::max(channel_gain, 1e-6);
     // afterpulsing：上一 bin 泄漏到当前 bin 的延迟伪计数（APD/SPAD 捕获载流子释放）
     double prev_true_counts = 0.0;
 
@@ -214,7 +222,8 @@ std::vector<double> simulate_raw_counts(
         optical_depth += true_extinction[index] * step_km;
         double range_km = ranges_m[index] / 1000.0;
         // 离散化 LiDAR 方程：C·E·O·β·exp(-2τ)/r²
-        double signal = simulation.system_constant * laser_energy_mj * overlap[index] * true_backscatter[index]
+        double signal = simulation.system_constant * effective_gain * laser_energy_mj
+            * overlap[index] * true_backscatter[index]
             * std::exp(-2.0 * optical_depth) / std::max(range_km * range_km, 1e-6);
         // 白天户外太阳背景会随仰角/距离弱变化，这里把它并入距离相关背景项。
         double range_background = background_counts + simulation.detector_dark_counts
@@ -223,29 +232,158 @@ std::vector<double> simulate_raw_counts(
         // afterpulsing 叠加：上一 bin 真实计数按比例泄漏到当前 bin，模拟 APD 捕获载流子延迟释放。
         // 这会产生"强信号后拖尾"，是真实 MPL 近场数据最常见的伪影。
         double afterpulse = simulation.afterpulsing_ratio * prev_true_counts;
-        double expected_counts = std::max(signal + range_background + afterpulse, 0.0);
+        double expected_per_pulse = std::max(signal + range_background + afterpulse, 0.0);
+        double dead_time_corrected_per_pulse = expected_per_pulse
+            / (1.0 + simulation.dead_time_loss * expected_per_pulse);
+        double integrated_expected = dead_time_corrected_per_pulse * integrated_pulses;
 
         double sampled = 0.0;
-        if (expected_counts < 900000.0) {
-            std::poisson_distribution<int> poisson(expected_counts);
+        if (integrated_expected < 900000.0) {
+            std::poisson_distribution<int> poisson(integrated_expected);
             sampled = static_cast<double>(poisson(rng));
         } else {
-            sampled = expected_counts + sample_gaussian(rng, 0.0, std::sqrt(expected_counts));
+            sampled = integrated_expected
+                + sample_gaussian(rng, 0.0, std::sqrt(integrated_expected));
         }
-        sampled += sample_gaussian(rng, 0.0, simulation.read_noise_counts);
+        sampled /= integrated_pulses;
+        sampled += sample_gaussian(
+            rng,
+            0.0,
+            simulation.read_noise_counts / std::sqrt(integrated_pulses));
 
-        // photon-counting 死时间软压缩：N_obs = N / (1 + α·N)
-        // 物理含义：SPAD/PMT 探测一个光子后 τ_dead 内无法响应下一个，高计数率时非线性压平。
-        // 与硬截断不同，这会产生平滑的饱和曲线——近场强回波不会"撞墙"而是渐近趋近上限。
-        double dead_time_corrected = sampled / (1.0 + simulation.dead_time_loss * std::max(sampled, 0.0));
         // 硬饱和作为安全阀（仅极端情况触发）
-        double saturated = std::min(dead_time_corrected, simulation.adc_saturation_counts);
+        double saturated = std::min(sampled, simulation.adc_saturation_counts);
         raw_counts.push_back(std::max(saturated, range_background + 0.1));
 
         // 记录当前 bin 的真实计数（不含 afterpulsing），供下一 bin 泄漏使用
         prev_true_counts = std::max(signal + range_background, 0.0);
     }
     return raw_counts;
+}
+
+struct SimulatedReceiverChannels {
+    std::vector<LidarChannel> channels; ///< 近/远场与平行/垂直偏振组成的四条物理通道。
+    std::vector<double> merged_parallel_counts; ///< 供旧处理链使用的近远场拼接平行通道。
+    std::vector<double> merged_overlap; ///< 与拼接主通道对应的等效重叠因子。
+    std::vector<double> depolarization_ratio; ///< 由粒径组成和热点状态构造的体退偏比真值。
+};
+
+/**
+ * @brief 按 YLJ5 双望远镜和偏振能力生成四条接收通道。
+ *
+ * 近远场增益、重叠曲线和拼接距离尚无实机标定证据，因此只属于正演假设；函数同时
+ * 生成兼容主通道，使现有单通道预处理和反演代码无需感知接收链拆分。
+ */
+SimulatedReceiverChannels simulate_ylj5_receiver_channels(
+    const SimulatedFields& fields,
+    const std::vector<double>& ranges_m,
+    double laser_energy_mj,
+    double background_counts,
+    double integration_time_s,
+    const SimulationConfig& simulation,
+    std::mt19937& rng
+) {
+    SimulatedReceiverChannels result;
+    result.depolarization_ratio.reserve(ranges_m.size());
+
+    std::vector<double> parallel_backscatter;
+    std::vector<double> perpendicular_backscatter;
+    parallel_backscatter.reserve(ranges_m.size());
+    perpendicular_backscatter.reserve(ranges_m.size());
+
+    for (std::size_t index = 0; index < ranges_m.size(); ++index) {
+        double pm25 = index < fields.true_pm25.size() ? fields.true_pm25[index] : 0.0;
+        double pm10 = index < fields.true_pm10.size() ? fields.true_pm10[index] : pm25;
+        double coarse_fraction = clamp((pm10 - pm25) / std::max(pm10, 1.0), 0.0, 1.0);
+        bool hotspot = index < fields.true_hotspot_mask.size()
+            && fields.true_hotspot_mask[index] != 0;
+        double depolarization = clamp(
+            0.04 + 0.30 * coarse_fraction + (hotspot ? 0.08 : 0.0),
+            0.03,
+            0.45);
+        result.depolarization_ratio.push_back(depolarization);
+        double total_beta = fields.true_backscatter[index];
+        double parallel = total_beta / (1.0 + depolarization);
+        parallel_backscatter.push_back(parallel);
+        perpendicular_backscatter.push_back(total_beta - parallel);
+    }
+
+    std::vector<double> near_overlap;
+    near_overlap.reserve(ranges_m.size());
+    double near_full = std::max(simulation.near_full_overlap_m, 0.1);
+    for (double range_m : ranges_m) {
+        near_overlap.push_back(clamp(range_m / near_full, 0.05, 1.0));
+    }
+    std::vector<double> far_overlap = build_overlap(
+        ranges_m,
+        simulation.far_full_overlap_m,
+        simulation.far_min_overlap);
+
+    auto make_channel = [&](
+        const std::string& id,
+        const std::string& telescope,
+        const std::string& polarization,
+        double aperture_mm,
+        double gain,
+        const std::vector<double>& backscatter,
+        const std::vector<double>& channel_overlap) {
+        LidarChannel channel;
+        channel.channel_id = id;
+        channel.telescope = telescope;
+        channel.polarization = polarization;
+        channel.wavelength_nm = simulation.wavelength_nm;
+        channel.telescope_aperture_mm = aperture_mm;
+        channel.relative_gain = gain;
+        channel.background_counts = background_counts;
+        channel.overlap = channel_overlap;
+        channel.raw_counts = simulate_raw_counts(
+            backscatter,
+            fields.true_extinction,
+            channel_overlap,
+            ranges_m,
+            laser_energy_mj,
+            background_counts,
+            integration_time_s,
+            gain,
+            simulation,
+            rng);
+        return channel;
+    };
+
+    double near_gain = std::max(simulation.near_channel_gain, 1e-6);
+    result.channels.push_back(make_channel(
+        "near_parallel_532nm", "near", "parallel",
+        simulation.near_telescope_aperture_mm, near_gain,
+        parallel_backscatter, near_overlap));
+    result.channels.push_back(make_channel(
+        "near_perpendicular_532nm", "near", "perpendicular",
+        simulation.near_telescope_aperture_mm, near_gain,
+        perpendicular_backscatter, near_overlap));
+    result.channels.push_back(make_channel(
+        "far_parallel_532nm", "far", "parallel",
+        simulation.far_telescope_aperture_mm, 1.0,
+        parallel_backscatter, far_overlap));
+    result.channels.push_back(make_channel(
+        "far_perpendicular_532nm", "far", "perpendicular",
+        simulation.far_telescope_aperture_mm, 1.0,
+        perpendicular_backscatter, far_overlap));
+
+    const auto& near_parallel = result.channels[0].raw_counts;
+    const auto& far_parallel = result.channels[2].raw_counts;
+    result.merged_parallel_counts.reserve(ranges_m.size());
+    result.merged_overlap.reserve(ranges_m.size());
+    double stitch = std::max(simulation.channel_stitch_range_m, near_full);
+    for (std::size_t index = 0; index < ranges_m.size(); ++index) {
+        double blend = clamp((ranges_m[index] - 0.5 * stitch) / stitch, 0.0, 1.0);
+        blend = blend * blend * (3.0 - 2.0 * blend);
+        double near_normalized = background_counts
+            + (near_parallel[index] - background_counts) / near_gain;
+        result.merged_parallel_counts.push_back(
+            (1.0 - blend) * near_normalized + blend * far_parallel[index]);
+        result.merged_overlap.push_back(
+            (1.0 - blend) * near_overlap[index] + blend * far_overlap[index]);
+    }
+    return result;
 }
 
 /**

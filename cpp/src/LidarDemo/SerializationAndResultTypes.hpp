@@ -61,6 +61,30 @@ Json json_array_from_matrix(const std::vector<std::vector<double>>& values) {
     return Json(std::move(output));
 }
 
+Json to_json(const LidarChannel& value) {
+    // 批处理产物保留全部物理通道，便于后续与实机标定数据逐通道对比。
+    return Json::Object{
+        {"channel_id", value.channel_id},
+        {"telescope", value.telescope},
+        {"polarization", value.polarization},
+        {"wavelength_nm", value.wavelength_nm},
+        {"telescope_aperture_mm", value.telescope_aperture_mm},
+        {"relative_gain", value.relative_gain},
+        {"background_counts", value.background_counts},
+        {"raw_counts", json_array_from_double_vector(value.raw_counts)},
+        {"overlap", json_array_from_double_vector(value.overlap)},
+    };
+}
+
+Json json_array_from_channels(const std::vector<LidarChannel>& values) {
+    Json::Array output;
+    output.reserve(values.size());
+    for (const auto& value : values) {
+        output.emplace_back(to_json(value));
+    }
+    return Json(std::move(output));
+}
+
 /**
  * @brief 将站点元信息 SiteInfo 序列化为 JSON。
  * @param[in] value 站点信息结构体。
@@ -111,6 +135,8 @@ Json to_json(const LidarProfile& value) {
         {"true_pm25", json_array_from_double_vector(value.true_pm25)},
         {"true_pm10", json_array_from_double_vector(value.true_pm10)},
         {"true_hotspot_mask", json_array_from_int_vector(value.true_hotspot_mask)},
+        {"channels", json_array_from_channels(value.channels)},
+        {"depolarization_ratio", json_array_from_double_vector(value.depolarization_ratio)},
     };
 }
 
@@ -292,4 +318,3 @@ struct DatasetRunResult {
     std::map<std::string, std::vector<Hotspot>> hotspots_by_timestamp;
     Json metrics;
 };
-

@@ -1,177 +1,117 @@
 /**
- * @file sim_device.hpp
- * @brief 仿真 LiDAR 设备：按配置生成周期性扫描帧流。
- *
- * SimDevice 在初始化时一次性生成约 24 小时的仿真战役数据（通过调用
- * lidar_core::run_end_to_end 触发内部前向仿真），缓存所有原始射线。
- * 服务端随后按采集节奏循环调用 produce_scan_cycle()，模拟设备 24/7 连续上报。
+ * @file SimDevice.hpp
+ * @brief 按公开规格惰性生成数据的 YLJ5 / AGHJ-I-LIDAR(MPL) 仿真设备。
  */
 #pragma once
 
+#include <atomic>
+#include <chrono>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <vector>
 
 #include "lidar_core/LidarCore.hpp"
 #include "lidar_protocol/Frame.hpp"
+#include "lidar_server/Ylj5DeviceSpec.hpp"
 
 namespace lidar_server {
 
-/**
- * @brief 仿真设备配置。
- *
- * 所有字段最终会透传给 lidar_core::SimulationConfig，控制整个前向仿真
- * （场景生成 → 射线投射 → 正演信号）的物理与几何参数。下列默认值
- * 对应一个位于北京的假想站点，时间跨度约 24 小时（288 步 × 5 分钟）。
- */
-struct SimDeviceConfig {
-    // ---- 站点标识 ----
-    std::string site_id = "sim-site-01";   ///< 站点唯一标识符，用于协议帧中的 site_id 字段
-    std::string site_name = "Field PM LiDAR Demo Site"; ///< 站点可读名称，推送给客户端作为展示用
-    double latitude_deg = 39.9042;         ///< 站点纬度（°），北京天安门附近，用于地理坐标计算
-    double longitude_deg = 116.4074;       ///< 站点经度（°），同上
-    std::string instrument_preset = "near_ir_micro_pulse_pm_lidar"; ///< 工地/园区近红外微脉冲 PM LiDAR 预设
-    // application_mode 可选值：
-    // - construction_site：固定工地/厂区扬尘场景，近地面施工源更强，适合模拟围挡、料场、道路扬尘。
-    // - urban_grid：城市网格化固定站场景，交通/区域输送背景更强，适合模拟多站点城市污染巡查。
-    // - mobile_mapping：走航车载场景，平台按 vehicle_speed_ms 前进，并叠加近源移动扬尘羽流。
-    std::string application_mode = "construction_site";
-    std::string vendor_profile = "near_ir_micro_pulse_pm_like"; ///< 工地/园区在售近红外微脉冲 PM 设备 profile
-
-    // ---- 仿真可复现性 ----
-    int seed = 7;                          ///< 随机数种子，相同种子产生完全相同的仿真数据（可复现性）
-
-    // ---- 时间维度 ----
-    // 真实设备会 24/7 连续发射与上报；这里的时间维度只定义预生成缓存中“不重复环境状态”的时间轴。
-    // 每个 step 代表一次完整采集周期（stare + PPI 扇区扫描），不是单个激光脉冲，也不是单个 TCP 帧。
-    // 默认 288 × 5min 约等于 24h；5min 来自 30s stare + 3 层 PPI × 72 方位 × (1s dwell + 0.2s 转动稳定) + 余量。
-    int time_steps = 288;                  ///< 预生成扫描周期数量；服务端播完后循环，模拟全天连续运行
-    int minutes_per_step = 5;              ///< 相邻扫描周期时间戳间隔；应接近一次完整体扫的真实采集耗时
-
-    // ---- 距离分辨率（Range Bin）----
-    int range_bin_count = 160;             ///< 每条射线的距离 bin 数量，即一条射线被分成多少段
-    double range_bin_m = 37.5;             ///< 相邻距离 bin 的间距（米）；总探测距离 = count × m = 6000m
-    //   ↑ 用 37.5 m 作为工程折中：比真实 3.75~15 m 粗，但适合实时 demo 和 3D 显示
-
-    // ---- PPI 扫描几何 ----
-    // PPI（Plan Position Indicator）= 雷达绕垂直轴旋转，在固定仰角下扫描一圈；
-    // 多个仰角组合即体积扫描(volume scan)，可重建三维污染场。
-    // 商用设备通常支持可编程扫描：PM/扬尘设备常做水平 360° 或目标扇区扫描；
-
-    // 边界层/风场扫描多普勒设备常见 1°、5°、15°、35°、75° PPI，再穿插 RHI 或垂直凝视。
-    // 默认采用工地/园区 PM 监测的紧凑三层：1° 捕捉近地面源，5° 覆盖低空输送，15° 提供烟羽抬升约束。
-    std::vector<double> ppi_elevations_deg = {1.0, 5.0, 15.0}; ///< PPI/扇区扫描的仰角序列（°）
-    double ppi_azimuth_start_deg = 0.0;    ///< 扇区起始方位角（°）
-    double ppi_azimuth_stop_deg = 360.0;   ///< 扇区结束方位角（°）；360 表示完整一圈，内部不会重复 0°
-    double ppi_azimuth_step_deg = 5.0;     ///< PPI 扫描的方位角步进（°），0..360 每 5°得到 72 条视线
-    double ppi_line_dwell_s = 1.0;         ///< 每条视线积分/驻留时间（s），5 kHz 下约积分 5000 个激光脉冲
-    double ppi_step_overhead_s = 0.2;      ///< 相邻方位/仰角切换、转台稳定、编码器确认的单视线平均额外耗时（s）
-    double ppi_scan_overhead_s = 10.0;     ///< 一轮体扫末尾回扫、状态上报、调度余量（s）
-    double stare_dwell_s = 30.0;           ///< 垂直凝视积分时间（s），用于近地面/边界层反演锚定
-    // 这里的 PRF 是激光发射脉冲频率，不是应用层完整 profile 的上报频率。
-    // 工地/园区在售近红外微脉冲 PM 设备常见 kHz 级 PRF；Raymetrics PMeye-like UV 设备是 20 Hz 高能量低 PRF 的另一类产品。
-    double pulse_repetition_hz = 5000.0;   ///< 激光脉冲重复频率（Hz）；每条 profile 通常由 dwell 内多次脉冲平均/积分得到
-
-    // ---- 正演物理常数 ----
-    // 这些参数直接进入 LiDAR 正演方程：P(r) = C × β(r) / r² × T(r)² 
-    // 下列默认值对标中科光电 YLJ5 / Sigma MiniMPL 等“微脉冲 PM LiDAR”：
-    //   • 532 nm 是 MPL 类最主流波长（MPLNET 全球网、CIMEL、Leosphere 均用），便于做偏振分光；
-    //   • 微脉冲（MPL）的物理本质是“μJ 级能量 × kHz 重复频率 × 长时间积分”，
-    //     单脉冲能量约 10~50 μJ（0.01~0.05 mJ），不是 0.5 mJ 那种大脉冲；
-    //   • 系统常数 C 与 E 相乘（signal = C·E·…），因此 E 降低 25 倍后 C 同步放大 25 倍
-    //     以保持 raw_counts 量级不变（信号靠积分累积，不靠单脉冲能量）。
-    double system_constant = 6500000000.0; ///< LiDAR 系统常数 C，综合发射能量、光学效率、接收口径等因素
-    //   ↑ 决定回波信号的绝对量级；值越大，同一大气条件下接收到的信号越强
-    double lidar_ratio_sr = 45.0;          ///< 气溶胶激光雷达比（单位 sr），即消光系数与后向散射系数之比
-    //   ↑ 典型值 40~60 sr（城市污染气溶胶 ~45 sr）；用于反演时区分气溶胶与分子贡献
-    double wavelength_nm = 532.0;          ///< MPL 类最主流波长（532nm），便于做偏振分光；近红外可选 905/910/1064/1550nm
-    double pulse_energy_mj = 0.02;         ///< 单脉冲能量均值（mJ），微脉冲 MPL 典型 10~50μJ；靠 kHz 积分凑信噪比
-    double pulse_energy_jitter = 0.04;     ///< 脉冲能量相对抖动
-    double background_counts_mean = 80.0;  ///< 白天户外背景计数均值
-    double full_overlap_m = 40.0;          ///< 完整 overlap 距离（m）；双望远镜设计可压到几十米，实现“零盲区”
-
-    // ---- 推送节奏 ----
-    double playback_time_scale = 1.0;      ///< 播放加速倍率；1.0 表示按真实采集耗时推送
-    int inter_frame_delay_ms = 0;          ///< 兼容旧入口的固定帧间隔覆盖；0 表示按 dwell/playback_time_scale 自动计算
+enum class DeviceRunState {
+    booting,  ///< 正在初始化和校验配置。
+    ready,    ///< 初始化完成，等待启动命令。
+    scanning, ///< 正在生成或发送扫描周期。
+    paused,   ///< 暂停发送，可由 start/resume 恢复。
+    stopped,  ///< 已停止发送，可由 start 重新启动。
+    fault,    ///< 初始化或周期生成失败，需要检查 fault_reason。
 };
 
+/** @brief 将设备运行状态转换为稳定的协议字符串。 */
+std::string device_run_state_to_string(DeviceRunState state);
+
 /**
- * @brief 仿真 LiDAR 设备。
+ * @brief YLJ5 公开规格仿真设备。
  *
- * 工作模式：
- *   1. 构造时调用 init() 一次性生成全部仿真数据并缓存
- *   2. produce_scan_cycle(step) 按时间步索引返回该步的所有帧
- *   3. 客户端按步索引循环调用，实现全天连续数据推送；超过缓存末尾后从第 0 步重播
+ * 设备按需生成单个扫描周期，不预生成整日战役。默认距离轴包含 5334 个距离门，
+ * 若缓存 180 个周期会占用数十 GB 内存；逐周期、逐帧接口把峰值限制在单周期规模。
  */
 class SimDevice {
 public:
-    explicit SimDevice(const SimDeviceConfig& config);
+    /** @brief 构造设备并立即执行公开规格校验。 */
+    explicit SimDevice(const SimDeviceConfig& config = {});
 
-    /**
-     * @brief 初始化：生成并缓存全部仿真数据。
-     * 在构造函数中自动调用，也可手动重新调用。
-     */
+    /** @brief 重置设备状态、校验配置，并根据 auto_start 进入就绪或扫描状态。 */
     void init();
 
     /**
-     * @brief 执行一次仿真"扫描周期"，产出该时间步的所有帧。
-     *
-     * @param step_index 时间步索引（0 ~ total_steps()-1）
-     * @return 该步产出的所有帧（stare + PPI 各方位）
+     * @brief 生成一个周期并把全部帧收集到内存。
+     * @note 主要用于测试和嵌入式调用；正式服务器应使用 stream_scan_cycle 降低内存峰值。
      */
     std::vector<lidar_protocol::Frame> produce_scan_cycle(int step_index);
 
     /**
-     * @brief 获取总时间步数。
+     * @brief 生成一个周期，并在每帧完成后立即交给回调处理。
+     * @param step_index 周期索引，范围为 [0, total_steps)。
+     * @param sink 帧消费回调；返回 false 会中止当前周期。
+     * @return 整个周期是否完整生成并被回调接受。
      */
-    int total_steps() const { return static_cast<int>(profiles_by_step_.size()); }
+    bool stream_scan_cycle(
+        int step_index,
+        const std::function<bool(lidar_protocol::Frame&&)>& sink);
 
-    /**
-     * @brief 获取每步间隔（分钟）。
-     */
-    int minutes_per_step() const { return config_.minutes_per_step; }
+    /** @brief 返回当前战役的周期总数；初始化失败时返回 0。 */
+    int total_steps() const;
+    /** @brief 返回相邻场景周期的相位间隔（分钟）。 */
+    int minutes_per_step() const;
+    /** @brief 返回固定帧间隔覆盖值（ms）。 */
+    int inter_frame_delay_ms() const;
 
-    /**
-     * @brief 获取站点信息。
-     */
+    /** @brief 返回当前站点信息副本。 */
     lidar_core::SiteInfo site_info() const;
+    /** @brief 在线程锁保护下返回完整设备配置副本。 */
+    SimDeviceConfig config() const;
 
-    /**
-     * @brief 获取帧间延迟（毫秒）。
-     */
-    int inter_frame_delay_ms() const { return config_.inter_frame_delay_ms; }
+    /** @brief 判断设备是否已初始化且处于 scanning 状态。 */
+    bool is_streaming() const;
+    /** @brief 返回当前设备运行状态。 */
+    DeviceRunState run_state() const;
 
-    /**
-     * @brief 获取设备配置。
-     */
-    const SimDeviceConfig& config() const { return config_; }
+    /** @brief 执行仿真控制命令并返回结构化 command_result 帧。 */
+    lidar_protocol::Frame handle_command(const lidar_core::Json& command);
 
-    /**
-     * @brief 获取指定时间步的地面观测帧。
-     */
+    /** @brief 构造最近一次合成地面观测帧。 */
     lidar_protocol::Frame ground_frame(int step_index) const;
-
-    /**
-     * @brief 获取设备能力与运行状态帧。
-     */
+    /** @brief 构造设备能力、公开规格和校准状态帧。 */
     lidar_protocol::Frame status_frame(int step_index) const;
-
-    /**
-     * @brief 获取设备健康、天气和链路遥测帧。
-     */
+    /** @brief 构造明确标为合成值的设备遥测帧。 */
     lidar_protocol::Frame telemetry_frame(int step_index) const;
 
 private:
-    SimDeviceConfig config_;
-    lidar_core::SimulationConfig sim_config_;
-    ///< 按时间步分组的原始射线
-    std::vector<std::vector<lidar_core::LidarProfile>> profiles_by_step_;
-    ///< 按时间步分组的地面观测
-    std::vector<lidar_core::GroundMeasurement> ground_measurements_;
-    ///< 所有时间戳列表
-    std::vector<std::string> timestamps_;
-    int next_sequence_id_ = 1;
-    bool initialized_ = false;
+    /** @brief 把设备层嵌套配置映射成单周期核心正演配置。 */
+    lidar_core::PipelineConfig pipeline_config_for_cycle(
+        const SimDeviceConfig& config,
+        int step_index) const;
+    /** @brief 根据战役起点和周期索引生成统一时间戳。 */
+    std::string timestamp_for_step(int step_index) const;
+    /** @brief 构造同步相机能力元数据；当前不伪造实机图像。 */
+    lidar_protocol::Frame camera_frame(
+        int step_index,
+        const std::string& timestamp,
+        const std::vector<lidar_core::LidarProfile>& profiles) const;
+    /** @brief 构造基于本周期合成回波的未标定快速产品摘要。 */
+    lidar_protocol::Frame product_frame(
+        int step_index,
+        const std::string& timestamp,
+        const std::vector<lidar_core::LidarProfile>& profiles) const;
+
+    mutable std::mutex mutex_; ///< 保护配置、运行状态、故障信息和最近地面观测。
+    SimDeviceConfig config_;  ///< 当前生效配置；命令修改时先复制校验，再整体替换。
+    DeviceRunState run_state_ = DeviceRunState::booting; ///< 当前运行状态。
+    std::string fault_reason_; ///< 最近一次初始化或生成失败原因；正常状态为空。
+    std::chrono::system_clock::time_point campaign_start_time_; ///< 当前战役的实时时间起点。
+    lidar_core::GroundMeasurement last_ground_measurement_; ///< 最近周期生成的合成地面观测。
+    mutable std::atomic<int> next_sequence_id_{1}; ///< 跨线程递增的协议帧序号。
+    bool initialized_ = false; ///< 公开规格校验是否通过且设备是否完成初始化。
 };
 
 } // namespace lidar_server

@@ -53,6 +53,16 @@ void close_socket(int sock) {
 #endif
 }
 
+void shutdown_socket(int sock) {
+    // 先 shutdown 再 close，确保另一线程中阻塞的 accept/recv 能被可靠唤醒。
+    if (sock < 0) return;
+#ifdef _WIN32
+    ::shutdown(static_cast<SocketHandle>(sock), SD_BOTH);
+#else
+    ::shutdown(sock, SHUT_RDWR);
+#endif
+}
+
 } // anonymous namespace
 
 TcpServer::TcpServer(std::uint16_t port)
@@ -146,9 +156,11 @@ void TcpServer::stop() {
 
     // exchange 原子地取值并置 -1：即使与 start() 并发，也只有一个线程会 close
     if (int fd = listen_socket_.exchange(-1); fd >= 0) {
+        shutdown_socket(fd);
         close_socket(fd);
     }
     if (int fd = client_socket_.exchange(-1); fd >= 0) {
+        shutdown_socket(fd);
         close_socket(fd);
     }
 }

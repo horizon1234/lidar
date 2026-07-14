@@ -1,6 +1,6 @@
 /**
  * @file DataTypes.hpp
- * @brief Public LiDAR data carrier types.
+ * @brief LiDAR 公共数据载体类型。
  */
 #pragma once
 
@@ -56,6 +56,19 @@ struct SourceConfig {
     CloudnetSourceConfig cloudnet;    ///< cloudnet_hybrid 模式下的详细参数
 };
 
+/** @brief 一条由望远镜和偏振分光共同确定的物理接收路径。 */
+struct LidarChannel {
+    std::string channel_id;           ///< 稳定通道标识，如 near_parallel_532nm。
+    std::string telescope;            ///< 望远镜路径：near（近场）或 far（远场）。
+    std::string polarization;         ///< 偏振分量：parallel（平行）或 perpendicular（垂直）。
+    double wavelength_nm = 0.0;       ///< 当前通道中心波长（nm）。
+    double telescope_aperture_mm = 0.0; ///< 当前接收望远镜口径（mm）。
+    double relative_gain = 1.0;       ///< 相对远场平行通道的仿真增益。
+    double background_counts = 0.0;   ///< 单脉冲等效背景计数。
+    std::vector<double> raw_counts;   ///< 与 profile 距离轴对齐的通道原始计数。
+    std::vector<double> overlap;      ///< 与 profile 距离轴对齐的几何重叠因子。
+};
+
 /**
  * @brief 单条 LiDAR 扫描射线（ray）的完整原始数据
  *
@@ -87,6 +100,9 @@ struct LidarProfile {
     std::vector<double> true_pm25;         ///< PM2.5 浓度真值（µg/m³，用于评估）
     std::vector<double> true_pm10;         ///< PM10 浓度真值（µg/m³，用于评估）
     std::vector<int> true_hotspot_mask;    ///< 热点像元掩膜真值（0/1，用于评估）
+    // raw_counts 继续作为近远场拼接后的兼容主通道，现有反演链无需改入口。
+    std::vector<LidarChannel> channels; ///< 近/远场与平行/垂直偏振组成的物理通道列表。
+    std::vector<double> depolarization_ratio; ///< 与距离轴对齐的体退偏比。
 };
 
 /**
@@ -103,6 +119,13 @@ struct GroundMeasurement {
     double temperature_c = 0.0;       ///< 温度（℃）
     double wind_speed_ms = 0.0;       ///< 风速（m/s）
     double wind_dir_deg = 0.0;        ///< 风向（°）
+};
+
+/** @brief 供惰性设备仿真使用、不执行反演和文件输出的轻量战役结果。 */
+struct SyntheticCampaign {
+    SiteInfo site;                                  ///< 当前战役的站点信息。
+    std::vector<LidarProfile> profiles;             ///< 正演生成的原始扫描射线。
+    std::vector<GroundMeasurement> ground_measurements; ///< 可选的合成地面观测。
 };
 
 /**

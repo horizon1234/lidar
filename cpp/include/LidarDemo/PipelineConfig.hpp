@@ -33,6 +33,8 @@ struct SimulationConfig {
     int seed = 7;                          ///< 随机数种子（决定可复现性）
     int time_steps = 18;                   ///< 仿真的时间步数量
     int minutes_per_step = 20;            ///< 相邻时间步的间隔（分钟）
+    int start_step_index = 0;              ///< 分段/惰性生成时的全局起始步索引
+    int phase_time_steps = 0;              ///< 日变化相位总步数；0 表示使用 time_steps
     int range_bin_count = 60;             ///< 每条射线的距离 bin 数量
     double range_bin_m = 100.0;           ///< 相邻距离 bin 的间距（m）
     /// PPI 体积扫描的仰角序列（°，高于水平面）。
@@ -49,6 +51,8 @@ struct SimulationConfig {
     double ppi_line_dwell_s = 1.0;        ///< 每条视线的积分/驻留时间（s），商用 PM 扫描雷达常见量级为秒到十秒
     double ppi_step_overhead_s = 0.0;     ///< 相邻方位/仰角切换、转台稳定、编码器确认的单视线平均耗时（s）
     double ppi_scan_overhead_s = 0.0;      ///< 一次扫描周期的转台回零、状态上报等额外耗时（s）
+    bool include_stare_profile = true;     ///< 是否在扫描周期前生成一条垂直观测
+    double stare_dwell_s = 30.0;           ///< 垂直观测积分时间（s）
     double pulse_repetition_hz = 5000.0;  ///< 激光脉冲重复频率（Hz），是激光 shot 频率，不是完整 profile 上报频率
     double system_constant = 6500000000.0; ///< LiDAR 系统常数 C（正演发射方程用）；C·E 乘积需与能量匹配
     double lidar_ratio_sr = 45.0;         ///< 气溶胶激光雷达比（sr，消光后向散射比）
@@ -67,6 +71,16 @@ struct SimulationConfig {
     double solar_background_scale = 1.0;  ///< 太阳背景强度缩放，移动/白天工地可调高
     double vehicle_speed_ms = 0.0;        ///< 走航模式下平台速度（m/s），固定站为 0
     double truth_hotspot_ext_threshold = 0.025; ///< 真值热点掩膜的烟羽干消光贡献阈值，默认保留旧行为
+
+    // YLJ5 公开规格接收模型；旧批处理配置默认关闭，以保持原有单通道行为。
+    bool enable_ylj5_receiver_channels = false; ///< 是否生成近/远场双望远镜四偏振通道。
+    double near_telescope_aperture_mm = 40.0;   ///< 近场望远镜口径（mm），默认取采购上限。
+    double far_telescope_aperture_mm = 160.0;   ///< 远场望远镜口径（mm），默认取采购下限。
+    double near_channel_gain = 0.08;            ///< 近场接收链相对增益假设。
+    double near_full_overlap_m = 3.75;          ///< 近场通道完整重叠距离假设（m）。
+    double far_full_overlap_m = 120.0;          ///< 远场通道完整重叠距离假设（m）。
+    double far_min_overlap = 0.02;              ///< 远场通道近端最小重叠因子。
+    double channel_stitch_range_m = 150.0;      ///< 近远场兼容主通道的平滑拼接尺度（m）。
 
     /**
      * @brief 取有效仰角列表（兼容旧配置）。

@@ -66,6 +66,8 @@ PipelineConfig parse_pipeline_config(const Json& value) {
     config.simulation.seed = simulation.at("seed").int_value();
     config.simulation.time_steps = simulation.at("time_steps").int_value();
     config.simulation.minutes_per_step = simulation.at("minutes_per_step").int_value();
+    config.simulation.start_step_index = simulation.contains("start_step_index") ? simulation.at("start_step_index").int_value() : config.simulation.start_step_index;
+    config.simulation.phase_time_steps = simulation.contains("phase_time_steps") ? simulation.at("phase_time_steps").int_value() : config.simulation.phase_time_steps;
     config.simulation.range_bin_count = simulation.at("range_bin_count").int_value();
     config.simulation.range_bin_m = simulation.at("range_bin_m").number_value();
     // PPI 仰角：优先读取多仰角数组 ppi_elevations_deg；
@@ -84,6 +86,8 @@ PipelineConfig parse_pipeline_config(const Json& value) {
     config.simulation.ppi_line_dwell_s = simulation.contains("ppi_line_dwell_s") ? simulation.at("ppi_line_dwell_s").number_value() : config.simulation.ppi_line_dwell_s;
     config.simulation.ppi_step_overhead_s = simulation.contains("ppi_step_overhead_s") ? simulation.at("ppi_step_overhead_s").number_value() : config.simulation.ppi_step_overhead_s;
     config.simulation.ppi_scan_overhead_s = simulation.contains("ppi_scan_overhead_s") ? simulation.at("ppi_scan_overhead_s").number_value() : config.simulation.ppi_scan_overhead_s;
+    config.simulation.include_stare_profile = simulation.contains("include_stare_profile") ? simulation.at("include_stare_profile").bool_value() : config.simulation.include_stare_profile;
+    config.simulation.stare_dwell_s = simulation.contains("stare_dwell_s") ? simulation.at("stare_dwell_s").number_value() : config.simulation.stare_dwell_s;
     config.simulation.pulse_repetition_hz = simulation.contains("pulse_repetition_hz") ? simulation.at("pulse_repetition_hz").number_value() : config.simulation.pulse_repetition_hz;
     config.simulation.system_constant = simulation.at("system_constant").number_value();
     config.simulation.lidar_ratio_sr = simulation.at("lidar_ratio_sr").number_value();
@@ -102,6 +106,14 @@ PipelineConfig parse_pipeline_config(const Json& value) {
     config.simulation.solar_background_scale = simulation.contains("solar_background_scale") ? simulation.at("solar_background_scale").number_value() : config.simulation.solar_background_scale;
     config.simulation.vehicle_speed_ms = simulation.contains("vehicle_speed_ms") ? simulation.at("vehicle_speed_ms").number_value() : config.simulation.vehicle_speed_ms;
     config.simulation.truth_hotspot_ext_threshold = simulation.contains("truth_hotspot_ext_threshold") ? simulation.at("truth_hotspot_ext_threshold").number_value() : config.simulation.truth_hotspot_ext_threshold;
+    config.simulation.enable_ylj5_receiver_channels = simulation.contains("enable_ylj5_receiver_channels") ? simulation.at("enable_ylj5_receiver_channels").bool_value() : config.simulation.enable_ylj5_receiver_channels;
+    config.simulation.near_telescope_aperture_mm = simulation.contains("near_telescope_aperture_mm") ? simulation.at("near_telescope_aperture_mm").number_value() : config.simulation.near_telescope_aperture_mm;
+    config.simulation.far_telescope_aperture_mm = simulation.contains("far_telescope_aperture_mm") ? simulation.at("far_telescope_aperture_mm").number_value() : config.simulation.far_telescope_aperture_mm;
+    config.simulation.near_channel_gain = simulation.contains("near_channel_gain") ? simulation.at("near_channel_gain").number_value() : config.simulation.near_channel_gain;
+    config.simulation.near_full_overlap_m = simulation.contains("near_full_overlap_m") ? simulation.at("near_full_overlap_m").number_value() : config.simulation.near_full_overlap_m;
+    config.simulation.far_full_overlap_m = simulation.contains("far_full_overlap_m") ? simulation.at("far_full_overlap_m").number_value() : config.simulation.far_full_overlap_m;
+    config.simulation.far_min_overlap = simulation.contains("far_min_overlap") ? simulation.at("far_min_overlap").number_value() : config.simulation.far_min_overlap;
+    config.simulation.channel_stitch_range_m = simulation.contains("channel_stitch_range_m") ? simulation.at("channel_stitch_range_m").number_value() : config.simulation.channel_stitch_range_m;
 
     // 反演参数（必填）
     const Json& retrieval = value.at("retrieval");

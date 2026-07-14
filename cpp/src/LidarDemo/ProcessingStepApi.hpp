@@ -62,15 +62,10 @@ ProcessedProfile SingleProfileProcessingChain::process(const LidarProfile& profi
         ? inversion.first
         : humidity_.process(inversion.first, profile.relative_humidity);
 
+    // PM 质量浓度不是单条弹性回波可以独立确定的物理量。这里保持为空，只有批处理
+    // 标定链或实时客户端加载站点标定模型后才允许填充，避免固定经验倍数冒充实测 PM。
     std::vector<double> pm25;
     std::vector<double> pm10;
-    pm25.reserve(dry_extinction.size());
-    pm10.reserve(dry_extinction.size());
-    for (double ext : dry_extinction) {
-        double est_pm25 = std::max(0.0, ext) * 25.0;
-        pm25.push_back(est_pm25);
-        pm10.push_back(est_pm25 * 1.5);
-    }
 
     auto ended_at = std::chrono::steady_clock::now();
     return ProcessedProfile{
@@ -147,3 +142,12 @@ Json to_json_hotspot(const Hotspot& value) {
     return to_json(value);
 }
 
+SyntheticCampaign generate_synthetic_campaign(const PipelineConfig& config) {
+    // 直接移动正演结果，不经过 run_end_to_end 的反演、评测和磁盘 JSON 中转。
+    CampaignData campaign = simulate_campaign(config);
+    SyntheticCampaign output;
+    output.site = std::move(campaign.site);
+    output.profiles = std::move(campaign.profiles);
+    output.ground_measurements = std::move(campaign.ground_measurements);
+    return output;
+}

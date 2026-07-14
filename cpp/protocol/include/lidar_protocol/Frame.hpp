@@ -29,7 +29,11 @@ enum class FrameType {
     lidar_l1,       ///< L1 预处理结果（可选中转）
     ground_obs,     ///< 地面观测数据
     status,         ///< 设备/系统状态（心跳、温度等）
+    telemetry,      ///< 设备运行遥测
+    camera,         ///< 同步相机能力、指向和可选图像引用元数据
+    lidar_product,  ///< 未标定在线派生产品
     command,        ///< 控制命令（扫描模式切换、参数调整等）
+    command_result, ///< 控制命令结构化执行结果
     hotspots,       ///< 检测到的热点列表
     summary,        ///< 周期性汇总摘要
     alarm,          ///< 告警事件
@@ -112,9 +116,16 @@ std::vector<Frame> parse_frames_from_buffer(const std::string& buffer, std::size
 /**
  * @brief 将一条 LidarProfile 转为 JSON 载荷对象。
  *
- * 包含全部字段（角度、距离轴、原始计数、气象量、分子场、真值场）。
+ * 始终包含角度、距离轴、兼容主通道、四物理通道、退偏比和气象量；分子场与仿真
+ * 真值由 include_truth_fields 控制。实时设备默认关闭真值，避免误当实测数据并降低带宽。
+ *
+ * @param profile 待序列化的原始射线。
+ * @param include_truth_fields 是否附加只用于算法验证的分子场和真值场。
+ * @return 可直接作为 lidar_raw 帧 payload 的 JSON 对象。
  */
-lidar_core::Json profile_to_json(const lidar_core::LidarProfile& profile);
+lidar_core::Json profile_to_json(
+    const lidar_core::LidarProfile& profile,
+    bool include_truth_fields = true);
 
 /**
  * @brief 从 JSON 载荷还原 LidarProfile。

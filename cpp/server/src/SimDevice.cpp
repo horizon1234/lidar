@@ -1,20 +1,19 @@
 /**
- * @file sim_device.cpp
- * @brief 仿真 LiDAR 设备实现：初始化时一次性生成全部仿真数据并缓存。
+ * @file SimDevice.cpp
+ * @brief 按公开规格惰性生成数据的 YLJ5 / AGHJ-I-LIDAR(MPL) 仿真设备实现。
  */
 #include "lidar_server/SimDevice.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <ctime>
-#include <filesystem>
 #include <iomanip>
-#include <iostream>
-#include <map>
-#include <set>
+#include <limits>
+#include <numeric>
 #include <sstream>
-#include <thread>
+#include <stdexcept>
 
 namespace lidar_server {
 
@@ -30,433 +29,825 @@ std::tm safe_localtime(std::time_t value) {
     return result;
 }
 
-bool parse_cycle_timestamp(const std::string& text, std::time_t& output) {
-    std::tm stamp{};
-    std::istringstream input(text);
-    input >> std::get_time(&stamp, "%Y-%m-%dT%H:%M:%S");
-    if (input.fail()) {
-        input.clear();
-        input.str(text);
-        stamp = std::tm{};
-        input >> std::get_time(&stamp, "%Y-%m-%dT%H:%M");
-    }
-    if (input.fail()) {
-        return false;
-    }
-    stamp.tm_isdst = -1;
-    output = std::mktime(&stamp);
-    return output != static_cast<std::time_t>(-1);
-}
-
-std::string timestamp_with_offset(const std::string& cycle_timestamp, double offset_s) {
-    std::time_t cycle_time{};
-    if (!parse_cycle_timestamp(cycle_timestamp, cycle_time)) {
-        return cycle_timestamp;
-    }
-
-    long long total_ms = static_cast<long long>(cycle_time) * 1000LL
-        + static_cast<long long>(std::llround(std::max(offset_s, 0.0) * 1000.0));
-    std::time_t seconds = static_cast<std::time_t>(total_ms / 1000LL);
-    int millis = static_cast<int>(total_ms % 1000LL);
-    if (millis < 0) {
-        millis += 1000;
-        --seconds;
-    }
-
-    std::tm stamp = safe_localtime(seconds);
+std::string format_timestamp(std::chrono::system_clock::time_point value) {
+    auto seconds = std::chrono::time_point_cast<std::chrono::seconds>(value);
+    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(value - seconds).count();
+    std::time_t time = std::chrono::system_clock::to_time_t(seconds);
+    std::tm stamp = safe_localtime(time);
     std::ostringstream output;
     output << std::put_time(&stamp, "%Y-%m-%dT%H:%M:%S")
            << '.' << std::setw(3) << std::setfill('0') << millis;
     return output.str();
 }
 
+std::string lowercase(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+std::string get_string(const lidar_core::Json& object, const char* key) {
+    return object.contains(key) && object.at(key).is_string()
+        ? object.at(key).string_value()
+        : "";
+}
+
+bool get_bool(const lidar_core::Json& object, const char* key, bool fallback) {
+    return object.contains(key) && object.at(key).is_bool()
+        ? object.at(key).bool_value()
+        : fallback;
+}
+
+lidar_core::Json doubles_to_json(const std::vector<double>& values) {
+    lidar_core::Json::Array output;
+    output.reserve(values.size());
+    for (double value : values) {
+        output.emplace_back(value);
+    }
+    return lidar_core::Json(std::move(output));
+}
+
+lidar_core::Json strings_to_json(const std::vector<std::string>& values) {
+    lidar_core::Json::Array output;
+    output.reserve(values.size());
+    for (const auto& value : values) {
+        output.emplace_back(value);
+    }
+    return lidar_core::Json(std::move(output));
+}
+
+lidar_core::Json scan_schedule_to_json(const Ylj5ScanProgram& scan) {
+    lidar_core::Json::Array output;
+    output.reserve(scan.elevations_deg.size());
+    for (std::size_t index = 0; index < scan.elevations_deg.size(); ++index) {
+        const double elevation = scan.elevations_deg[index];
+        output.emplace_back(lidar_core::Json::Object{
+            {"cycle_offset", static_cast<int>(index)},
+            {"scan_pattern", scan.scan_pattern_for_elevation(elevation)},
+            {"elevation_deg", elevation},
+        });
+    }
+    return lidar_core::Json(std::move(output));
+}
+
+std::string scan_pattern_for_profile(
+    const Ylj5ScanProgram& scan,
+    const lidar_core::LidarProfile& profile) {
+    return profile.scan_mode == "stare"
+        ? "vertical_observation"
+        : scan.scan_pattern_for_elevation(profile.elevation_deg);
+}
+
+const lidar_core::Json& command_parameters(const lidar_core::Json& command) {
+    if (command.contains("parameters") && command.at("parameters").is_object()) {
+        return command.at("parameters");
+    }
+    return command;
+}
+
+bool assign_number_if_present(
+    const lidar_core::Json& object,
+    const char* primary_key,
+    const char* compatibility_key,
+    double& output) {
+    if (object.contains(primary_key) && object.at(primary_key).is_number()) {
+        output = object.at(primary_key).number_value();
+        return true;
+    }
+    if (compatibility_key != nullptr
+        && object.contains(compatibility_key)
+        && object.at(compatibility_key).is_number()) {
+        output = object.at(compatibility_key).number_value();
+        return true;
+    }
+    return false;
+}
+
 } // namespace
 
+std::string device_run_state_to_string(DeviceRunState state) {
+    switch (state) {
+    case DeviceRunState::booting: return "booting";
+    case DeviceRunState::ready: return "ready";
+    case DeviceRunState::scanning: return "scanning";
+    case DeviceRunState::paused: return "paused";
+    case DeviceRunState::stopped: return "stopped";
+    case DeviceRunState::fault: return "fault";
+    }
+    return "fault";
+}
+
 SimDevice::SimDevice(const SimDeviceConfig& config)
-    : config_(config) {
+    : config_(config),
+      campaign_start_time_(std::chrono::system_clock::now()) {
     init();
 }
 
 void SimDevice::init() {
-    // 构建 lidar_core 的 SimulationConfig
-    sim_config_.seed = config_.seed;
-    sim_config_.instrument_preset = config_.instrument_preset;
-    sim_config_.application_mode = config_.application_mode;
-    sim_config_.vendor_profile = config_.vendor_profile;
-    sim_config_.time_steps = config_.time_steps;
-    sim_config_.minutes_per_step = config_.minutes_per_step;
-    sim_config_.range_bin_count = config_.range_bin_count;
-    sim_config_.range_bin_m = config_.range_bin_m;
-    sim_config_.ppi_elevations_deg = config_.ppi_elevations_deg;
-    sim_config_.ppi_azimuth_start_deg = config_.ppi_azimuth_start_deg;
-    sim_config_.ppi_azimuth_stop_deg = config_.ppi_azimuth_stop_deg;
-    sim_config_.ppi_azimuth_step_deg = config_.ppi_azimuth_step_deg;
-    sim_config_.ppi_line_dwell_s = config_.ppi_line_dwell_s;
-    sim_config_.ppi_step_overhead_s = config_.ppi_step_overhead_s;
-    sim_config_.ppi_scan_overhead_s = config_.ppi_scan_overhead_s;
-    sim_config_.pulse_repetition_hz = config_.pulse_repetition_hz;
-    sim_config_.system_constant = config_.system_constant;
-    sim_config_.lidar_ratio_sr = config_.lidar_ratio_sr;
-    sim_config_.wavelength_nm = config_.wavelength_nm;
-    sim_config_.pulse_energy_mj = config_.pulse_energy_mj;
-    sim_config_.pulse_energy_jitter = config_.pulse_energy_jitter;
-    sim_config_.background_counts_mean = config_.background_counts_mean;
-    sim_config_.full_overlap_m = config_.full_overlap_m;
+    std::lock_guard<std::mutex> lock(mutex_);
+    run_state_ = DeviceRunState::booting;
+    fault_reason_.clear();
 
-    // 构建最小 PipelineConfig 调用 run_end_to_end 生成原始仿真数据
-    lidar_core::PipelineConfig pipeline_config;
-    pipeline_config.source_mode = "simulation";
-    pipeline_config.simulation = sim_config_;
-    pipeline_config.site = site_info();
-    pipeline_config.retrieval.aerosol_lidar_ratio_sr = config_.lidar_ratio_sr;
-    pipeline_config.retrieval.reference_aerosol_backscatter = 0.0004;
-    pipeline_config.humidity.dry_reference_rh = 0.45;
-    pipeline_config.humidity.hygroscopicity = 1.1;
-    pipeline_config.pm_calibration.surface_bin_count = 6;
-    pipeline_config.hotspot.pm25_threshold_ugm3 = 50.0;
-    pipeline_config.hotspot.min_cells = 3;
-    // 用单元素列表减少灵敏度扫描开销
-    pipeline_config.evaluation.sensitivity_lidar_ratios = {config_.lidar_ratio_sr};
-
-    // 生成数据到临时目录
-    std::filesystem::path temp_dir = std::filesystem::temp_directory_path() / "lidar_sim_device";
-    std::filesystem::create_directories(temp_dir / "data" / "raw");
-
-    std::cerr << "[sim_device] Generating simulation campaign ("
-              << config_.time_steps << " steps, seed=" << config_.seed << ")...\n";
-
-    try {
-        lidar_core::run_end_to_end(pipeline_config, temp_dir);
-    } catch (const std::exception& e) {
-        std::cerr << "[sim_device] run_end_to_end failed: " << e.what() << "\n";
-        initialized_ = false;
-        return;
-    }
-
-    // 加载原始射线 JSON
-    std::filesystem::path raw_file = temp_dir / "data" / "raw" / "simulated_demo_campaign.json";
-    if (!std::filesystem::exists(raw_file)) {
-        std::cerr << "[sim_device] Raw data file not found: " << raw_file.string() << "\n";
-        initialized_ = false;
-        return;
-    }
-
-    lidar_core::Json raw_data = lidar_core::read_json_file(raw_file);
-    if (!raw_data.is_array()) {
-        std::cerr << "[sim_device] Raw data is not a JSON array\n";
-        initialized_ = false;
-        return;
-    }
-
-    // 按时间戳分组所有 profile
-    std::map<std::string, std::vector<lidar_core::LidarProfile>> grouped;
-
-    for (const auto& item : raw_data.array_items()) {
-        lidar_core::LidarProfile profile = lidar_protocol::json_to_profile(item);
-        std::string ts = profile.timestamp; // 在 move 前保存
-        grouped[ts].push_back(std::move(profile));
-    }
-
-    // 按时间戳排序填充缓存（键已经是排序的，因为 std::map）
-    timestamps_.clear();
-    profiles_by_step_.clear();
-    for (auto& [ts, profiles] : grouped) {
-        timestamps_.push_back(ts);
-        profiles_by_step_.push_back(std::move(profiles));
-    }
-
-    // 尝试从 L2 结果中提取地面观测
-    std::filesystem::path l2_file = temp_dir / "data" / "l2" / "demo_results.json";
-    ground_measurements_.clear();
-    ground_measurements_.resize(timestamps_.size());
-
-    if (std::filesystem::exists(l2_file)) {
-        lidar_core::Json l2_data = lidar_core::read_json_file(l2_file);
-        if (l2_data.contains("source") && l2_data.at("source").contains("ground_measurements")) {
-            const auto& gm_array = l2_data.at("source").at("ground_measurements");
-            if (gm_array.is_array()) {
-                std::map<std::string, lidar_core::GroundMeasurement> gm_by_ts;
-                for (const auto& gm_json : gm_array.array_items()) {
-                    auto gm = lidar_protocol::json_to_ground(gm_json);
-                    gm_by_ts[gm.timestamp] = std::move(gm);
-                }
-                for (size_t i = 0; i < timestamps_.size(); ++i) {
-                    auto it = gm_by_ts.find(timestamps_[i]);
-                    if (it != gm_by_ts.end()) {
-                        ground_measurements_[i] = it->second;
-                    }
-                }
+    // 初始化阶段只校验公开规格，不生成任何回波；这样服务启动不会预占整场战役内存。
+    const auto violations = config_.public_spec_violations();
+    if (!violations.empty()) {
+        std::ostringstream message;
+        for (std::size_t index = 0; index < violations.size(); ++index) {
+            if (index != 0) {
+                message << "; ";
             }
+            message << violations[index];
         }
+        fault_reason_ = message.str();
+        initialized_ = false;
+        run_state_ = DeviceRunState::fault;
+        return;
     }
 
-    // 清理临时文件
-    std::error_code ec;
-    std::filesystem::remove_all(temp_dir, ec);
-
-    std::cerr << "[sim_device] Initialization complete: " << timestamps_.size()
-              << " time steps, " << raw_data.array_items().size() << " total profiles cached.\n";
+    campaign_start_time_ = std::chrono::system_clock::now();
     initialized_ = true;
+    run_state_ = config_.stream.auto_start
+        ? DeviceRunState::scanning
+        : DeviceRunState::ready;
 }
 
-lidar_core::SiteInfo SimDevice::site_info() const {
-    lidar_core::SiteInfo site;
-    site.site_id = config_.site_id;
-    site.name = config_.site_name;
-    site.latitude_deg = config_.latitude_deg;
-    site.longitude_deg = config_.longitude_deg;
-    return site;
+lidar_core::PipelineConfig SimDevice::pipeline_config_for_cycle(
+    const SimDeviceConfig& config,
+    int step_index) const {
+    // 设备层区分“有公开证据的硬件边界”和“等待实机标定的正演参数”；核心正演 API
+    // 仍使用扁平 SimulationConfig，因此只在这一处完成映射，避免其他模块重复解释规格。
+    lidar_core::PipelineConfig pipeline;
+    pipeline.source_mode = "simulation";
+    pipeline.site.name = config.site.site_name;
+    pipeline.site.site_id = config.site.site_id;
+    pipeline.site.latitude_deg = config.site.latitude_deg;
+    pipeline.site.longitude_deg = config.site.longitude_deg;
+    pipeline.site.altitude_m = config.site.altitude_m;
+
+    auto& simulation = pipeline.simulation;
+    simulation.instrument_preset = "ylj5_aghj_i_lidar_mpl_public_spec";
+    simulation.application_mode = config.scene.application_mode;
+    simulation.vendor_profile = "ylj5_jsonl_emulator";
+    simulation.seed = config.scene.seed;
+    simulation.time_steps = 1;
+    simulation.minutes_per_step = config.minutes_per_cycle;
+    simulation.start_step_index = step_index;
+    simulation.phase_time_steps = config.campaign_cycles;
+    simulation.range_bin_count = config.hardware.range_bin_count();
+    simulation.range_bin_m = config.hardware.range_resolution_m;
+    // YLJ5 设备层把仰角队列解释为“逐周期轮换”，每周期只正演一层方位扫描。
+    // 这样第 0 周期为水平扫描、第 1 周期为锥形扫描，同时保持单周期内存规模稳定。
+    simulation.ppi_elevations_deg = {config.scan.elevation_for_cycle(step_index)};
+    simulation.ppi_azimuth_start_deg = config.scan.azimuth_start_deg;
+    simulation.ppi_azimuth_stop_deg = config.scan.azimuth_stop_deg;
+    simulation.ppi_azimuth_step_deg = config.scan.azimuth_step_deg;
+    simulation.ppi_line_dwell_s = config.scan.line_dwell_s;
+    simulation.ppi_step_overhead_s = config.scan.movement_seconds_per_ray();
+    simulation.ppi_scan_overhead_s = config.scan.scan_overhead_s;
+    simulation.include_stare_profile = config.scan.include_vertical_stare;
+    simulation.stare_dwell_s = config.scan.vertical_stare_dwell_s;
+    simulation.pulse_repetition_hz = config.scene.pulse_repetition_hz;
+    simulation.system_constant = config.scene.system_constant;
+    simulation.lidar_ratio_sr = config.scene.aerosol_lidar_ratio_sr;
+    simulation.wavelength_nm = config.hardware.wavelength_nm;
+    simulation.pulse_energy_mj = config.scene.pulse_energy_mj;
+    simulation.pulse_energy_jitter = config.scene.pulse_energy_jitter;
+    simulation.background_counts_mean = config.scene.background_counts_mean;
+    simulation.background_counts_jitter = config.scene.background_counts_jitter;
+    simulation.full_overlap_m = config.scene.far_full_overlap_m;
+    simulation.min_overlap = config.scene.far_min_overlap;
+    simulation.detector_dark_counts = config.scene.detector_dark_counts;
+    simulation.read_noise_counts = config.scene.read_noise_counts;
+    simulation.adc_saturation_counts = config.scene.adc_saturation_counts;
+    simulation.dead_time_loss = config.scene.dead_time_loss;
+    simulation.afterpulsing_ratio = config.scene.afterpulsing_ratio;
+    simulation.solar_background_scale = config.scene.solar_background_scale;
+    simulation.vehicle_speed_ms = config.scene.vehicle_speed_ms;
+    simulation.enable_ylj5_receiver_channels = true;
+    simulation.near_telescope_aperture_mm = config.hardware.near_telescope_aperture_mm;
+    simulation.far_telescope_aperture_mm = config.hardware.far_telescope_aperture_mm;
+    simulation.near_channel_gain = config.scene.near_channel_gain;
+    simulation.near_full_overlap_m = config.scene.near_full_overlap_m;
+    simulation.far_full_overlap_m = config.scene.far_full_overlap_m;
+    simulation.far_min_overlap = config.scene.far_min_overlap;
+    simulation.channel_stitch_range_m = config.scene.channel_stitch_range_m;
+
+    pipeline.retrieval.aerosol_lidar_ratio_sr = config.scene.aerosol_lidar_ratio_sr;
+    pipeline.retrieval.reference_aerosol_backscatter = 0.0004;
+    pipeline.evaluation.sensitivity_lidar_ratios = {config.scene.aerosol_lidar_ratio_sr};
+    return pipeline;
+}
+
+std::string SimDevice::timestamp_for_step(int step_index) const {
+    int minutes = 1;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        minutes = config_.minutes_per_cycle;
+    }
+    return format_timestamp(
+        campaign_start_time_ + std::chrono::minutes(static_cast<long long>(step_index) * minutes));
 }
 
 std::vector<lidar_protocol::Frame> SimDevice::produce_scan_cycle(int step_index) {
-    //
-    // 产出指定时间步的全部帧。返回的 frames 由 main.cpp 的主循环逐条发送给客户端。
-    //
-    // 每个时间步包含：
-    //   - 1 条 stare 射线（scan_mode="stare", 仰角 90°，天顶凝视）
-    //     ↑ 用于 PM2.5 反演的垂直锚定
-    //   - 多仰角 PPI 体扫（scan_mode="ppi"，默认 3 个仰角 × 72 个方位）
-    //     ↑ 用于热点检测和 L3 体素产品
-    //   - 1 条地面观测帧（ground_obs）
-    //     ↑ 共址地面站的 PM/气象数据
-    //   共 1 + elevation_count * azimuth_count 条 lidar_raw + ground_obs 帧
-    //
-    // 数据来源说明：
-    //   profiles_by_step_ 和 ground_measurements_ 都在 init() 中由
-    //   lidar_core::run_end_to_end() 一次性正向仿真生成。
-    //   该仿真链路为：
-    //     大气场景（气溶胶廓线 + 气象场）
-    //       → simulate_profile_fields()：按角度计算各距离 bin 的后向散射/消光真值
-    //       → simulate_raw_counts()：代入 LiDAR 方程 P(r)=C·β(r)/r²·T(r)² 算出光子计数
-    //       → 添加噪声（背景光 + 泊松散粒噪声）
-    //       → 结果写入 JSON → 这里加载到内存缓存
-    //   所有数据都是合成的（source_kind="synthetic_stare"/"synthetic_ppi"），非真实观测。
-    //
+    // 兼容接口会收集整个周期；正式 TCP 服务使用 stream_scan_cycle 逐帧释放 JSON DOM。
     std::vector<lidar_protocol::Frame> frames;
+    stream_scan_cycle(step_index, [&](lidar_protocol::Frame&& frame) {
+        frames.push_back(std::move(frame));
+        return true;
+    });
+    return frames;
+}
 
-    if (!initialized_ || step_index < 0 || step_index >= static_cast<int>(profiles_by_step_.size())) {
-        return frames;
+bool SimDevice::stream_scan_cycle(
+    int step_index,
+    const std::function<bool(lidar_protocol::Frame&&)>& sink) {
+    if (!sink) {
+        return false;
+    }
+    // 先在锁内取得不可变配置快照，耗时的物理正演在锁外执行，避免阻塞控制命令。
+    SimDeviceConfig config;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!initialized_
+            || run_state_ != DeviceRunState::scanning
+            || step_index < 0
+            || step_index >= config_.campaign_cycles) {
+            return false;
+        }
+        config = config_;
     }
 
-    const std::string& timestamp = timestamps_[step_index];
-    const auto& profiles = profiles_by_step_[step_index];
-    int rays_in_cycle = static_cast<int>(profiles.size());
-    std::string scan_cycle_id = config_.site_id + "_" + timestamp + "_cycle";
+    // 每次只生成一个周期。默认 5334 个距离门和四通道若预生成 180 个周期，
+    // 会占用数十 GB 内存；单周期生成把实测峰值控制在约 155 MiB。
+    lidar_core::SyntheticCampaign campaign;
+    try {
+        campaign = lidar_core::generate_synthetic_campaign(
+            pipeline_config_for_cycle(config, step_index));
+    } catch (const std::exception& error) {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            fault_reason_ = error.what();
+            run_state_ = DeviceRunState::fault;
+        }
+        sink(lidar_protocol::make_frame(
+            lidar_protocol::FrameType::alarm,
+            timestamp_for_step(step_index),
+            lidar_core::Json::Object{
+                {"alarm_code", "simulation_generation_failed"},
+                {"severity", "critical"},
+                {"message", error.what()},
+            }));
+        return false;
+    }
 
-    // ② lidar_raw 帧：把该时间步的每条射线（stare + PPI）序列化为 JSON
-    //    每条帧 payload 包含角度、距离轴、信号、系统参数、气象场和仿真真值：
-    //      - 角度信息：azimuth_deg、elevation_deg、scan_mode、scan_id
-    //      - 距离轴：ranges_m[N]（默认 160 个距离 bin，间隔 37.5m，最远 6km）
-    //      - 原始信号：raw_counts[N]（探测器光子计数，核心物理量）
-    //      - 系统参数：laser_energy_mj、background_counts、overlap[N]
-    //      - 气象场：relative_humidity、temperature_c、wind_speed_ms、wind_dir_deg
-    //      - 分子场：molecular_backscatter[N]、molecular_extinction[N]（Rayleigh 散射背景）
-    //      - 真值场（仅仿真有）：true_backscatter/extinction/pm25/pm10/hotspot_mask[N]
-    int ray_index = 0;
+    // 核心正演使用固定基准时间保证离线可复现；设备层对外发送时统一替换成当前战役时间。
+    const std::string timestamp = timestamp_for_step(step_index);
+    const std::string cycle_id = config.site.site_id + "_cycle_" + std::to_string(step_index);
+    for (std::size_t index = 0; index < campaign.profiles.size(); ++index) {
+        auto& profile = campaign.profiles[index];
+        profile.timestamp = timestamp;
+        profile.site_id = config.site.site_id;
+        profile.scan_id = cycle_id + "_ray_" + std::to_string(index);
+    }
+    for (auto& ground : campaign.ground_measurements) {
+        ground.timestamp = timestamp;
+        ground.site_id = config.site.site_id;
+    }
+    if (!campaign.ground_measurements.empty()) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        last_ground_measurement_ = campaign.ground_measurements.front();
+    }
+
     double elapsed_s = 0.0;
-    for (const auto& profile : profiles) {
-        int current_ray_index = ray_index++;
-        double dwell_s = profile.scan_mode == "stare"
-            ? config_.stare_dwell_s
-            : config_.ppi_line_dwell_s;
-        double movement_s = profile.scan_mode == "stare"
-            ? 0.0
-            : config_.ppi_step_overhead_s;
-        double acquisition_start_s = elapsed_s;
-        double acquisition_end_s = acquisition_start_s + std::max(dwell_s, 0.0);
-        double publish_offset_s = acquisition_end_s + std::max(movement_s, 0.0);
+    const int ray_count = static_cast<int>(campaign.profiles.size());
+    const auto cycle_start = campaign_start_time_
+        + std::chrono::minutes(static_cast<long long>(step_index) * config.minutes_per_cycle);
 
-        lidar_core::Json payload = lidar_protocol::profile_to_json(profile);
+    for (int ray_index = 0; ray_index < ray_count; ++ray_index) {
+        const auto& profile = campaign.profiles[static_cast<std::size_t>(ray_index)];
+        const bool stare = profile.scan_mode == "stare";
+        const double dwell_s = stare
+            ? config.scan.vertical_stare_dwell_s
+            : config.scan.line_dwell_s;
+        const double movement_s = stare
+            ? 0.0
+            : config.scan.movement_seconds_per_ray();
+        const double acquisition_start_s = elapsed_s;
+        const double acquisition_end_s = acquisition_start_s + std::max(dwell_s, 0.0);
+        const double publish_offset_s = acquisition_end_s + std::max(movement_s, 0.0);
+
+        // 实时帧默认不携带分子场和仿真真值；四物理通道与兼容主通道始终保留。
+        lidar_core::Json payload = lidar_protocol::profile_to_json(
+            profile,
+            config.stream.emit_truth_fields);
         payload["sequence_id"] = next_sequence_id_++;
         payload["frame_id"] = profile.scan_id;
-        payload["scan_cycle_id"] = scan_cycle_id;
+        payload["scan_cycle_id"] = cycle_id;
         payload["scan_cycle_timestamp"] = timestamp;
-        payload["ray_index"] = current_ray_index;
-        payload["rays_in_cycle"] = rays_in_cycle;
+        payload["device_scan_pattern"] = scan_pattern_for_profile(config.scan, profile);
+        payload["azimuth_scan_pattern"] = config.scan.scan_pattern_for_cycle(step_index);
+        payload["scheduled_elevation_deg"] = config.scan.elevation_for_cycle(step_index);
+        payload["elevation_schedule_index"] = static_cast<int>(
+            config.scan.elevation_schedule_index(step_index));
+        payload["elevation_schedule_length"] = static_cast<int>(
+            config.scan.elevations_deg.size());
+        payload["ray_index"] = ray_index;
+        payload["rays_in_cycle"] = ray_count;
         payload["acquisition_start_offset_s"] = acquisition_start_s;
         payload["acquisition_end_offset_s"] = acquisition_end_s;
         payload["publish_offset_s"] = publish_offset_s;
-        payload["acquisition_start_timestamp"] = timestamp_with_offset(timestamp, acquisition_start_s);
-        payload["acquisition_end_timestamp"] = timestamp_with_offset(timestamp, acquisition_end_s);
-        payload["publish_timestamp"] = timestamp_with_offset(timestamp, publish_offset_s);
-        payload["channel_id"] = "elastic_" + std::to_string(static_cast<int>(std::round(config_.wavelength_nm))) + "nm";
-        payload["detector_mode"] = "hybrid_photon_analog";
-        payload["range_resolution_m"] = config_.range_bin_m;
-        payload["wavelength_nm"] = config_.wavelength_nm;
-        payload["full_overlap_m"] = config_.full_overlap_m;
-        payload["pulse_repetition_hz"] = config_.pulse_repetition_hz;
+        payload["acquisition_start_timestamp"] = format_timestamp(
+            cycle_start + std::chrono::milliseconds(
+                static_cast<long long>(std::llround(acquisition_start_s * 1000.0))));
+        payload["acquisition_end_timestamp"] = format_timestamp(
+            cycle_start + std::chrono::milliseconds(
+                static_cast<long long>(std::llround(acquisition_end_s * 1000.0))));
+        payload["publish_timestamp"] = format_timestamp(
+            cycle_start + std::chrono::milliseconds(
+                static_cast<long long>(std::llround(publish_offset_s * 1000.0))));
+        payload["primary_channel_id"] = "stitched_parallel_532nm";
+        payload["detector_mode"] = "simulated_photon_counting";
+        payload["range_resolution_m"] = config.hardware.range_resolution_m;
+        payload["maximum_range_m"] = config.hardware.maximum_range_m;
+        payload["wavelength_nm"] = config.hardware.wavelength_nm;
+        payload["pulse_repetition_hz"] = config.scene.pulse_repetition_hz;
         payload["line_dwell_s"] = dwell_s;
         payload["motion_overhead_s"] = movement_s;
-        payload["ppi_step_overhead_s"] = config_.ppi_step_overhead_s;
-        payload["integrated_pulses"] = static_cast<int>(std::round(config_.pulse_repetition_hz * dwell_s));
-        payload["signal_unit"] = "counts";
+        payload["integrated_pulses"] = static_cast<int>(std::llround(
+            config.scene.pulse_repetition_hz * dwell_s));
+        payload["signal_unit"] = "mean_counts_per_pulse";
         payload["range_unit"] = "m";
-        payload["azimuth_encoder_deg"] = profile.azimuth_deg + 0.015 * std::sin(static_cast<double>(step_index + current_ray_index));
-        payload["elevation_encoder_deg"] = profile.elevation_deg + 0.01 * std::cos(static_cast<double>(step_index + current_ray_index));
-        payload["integration_pulses"] = profile.scan_mode == "stare"
-            ? static_cast<int>(std::round(config_.pulse_repetition_hz * config_.stare_dwell_s))
-            : static_cast<int>(std::round(config_.pulse_repetition_hz * config_.ppi_line_dwell_s));
-        payload["accumulation_time_ms"] = profile.scan_mode == "stare"
-            ? static_cast<int>(std::round(config_.stare_dwell_s * 1000.0))
-            : static_cast<int>(std::round(config_.ppi_line_dwell_s * 1000.0));
-        payload["instrument_preset"] = config_.instrument_preset;
-        payload["application_mode"] = config_.application_mode;
-        payload["vendor_profile"] = config_.vendor_profile;
+        payload["azimuth_encoder_deg"] = profile.azimuth_deg
+            + 0.015 * std::sin(static_cast<double>(step_index + ray_index));
+        payload["elevation_encoder_deg"] = profile.elevation_deg
+            + 0.01 * std::cos(static_cast<double>(step_index + ray_index));
+        payload["channel_count"] = static_cast<int>(profile.channels.size());
+        payload["data_provenance"] = "synthetic_public_spec_emulator";
+        payload["calibration_status"] = config.scene.calibration_status;
+        payload["vendor_wire_protocol_emulated"] = false;
         payload["qc_hint"] = lidar_core::Json::Object{
             {"near_range_overlap_limited", !profile.overlap.empty() && profile.overlap.front() < 0.35},
             {"background_counts", profile.background_counts},
             {"laser_energy_mj", profile.laser_energy_mj},
         };
-        frames.push_back(lidar_protocol::make_frame(
+        if (!sink(lidar_protocol::make_frame(
             lidar_protocol::FrameType::lidar_raw,
             timestamp,
-            std::move(payload)
-        ));
+            std::move(payload)))) {
+            return false;
+        }
         elapsed_s = publish_offset_s;
     }
 
-    // ③ ground_obs 帧：共址地面站观测，用于 PM 浓度的地面校准与验证
-    //    payload 包含：pm25_ugm3、pm10_ugm3、relative_humidity、temperature_c、
-    //                  wind_speed_ms、wind_dir_deg（6 个标量）
-    //    数据来源：仿真地面模型（init() 中从 L2 结果文件提取）
-    if (step_index < static_cast<int>(ground_measurements_.size())
-        && !ground_measurements_[step_index].timestamp.empty()) {
-        lidar_core::Json ground_payload = lidar_protocol::ground_to_json(ground_measurements_[step_index]);
-        double cycle_end_s = elapsed_s + std::max(config_.ppi_scan_overhead_s, 0.0);
-        ground_payload["scan_cycle_id"] = scan_cycle_id;
-        ground_payload["scan_cycle_timestamp"] = timestamp;
-        ground_payload["observation_timestamp"] = timestamp_with_offset(timestamp, cycle_end_s);
-        ground_payload["observation_offset_s"] = cycle_end_s;
-        frames.push_back(lidar_protocol::make_frame(
+    if (config.stream.emit_camera_frames) {
+        if (!sink(camera_frame(step_index, timestamp, campaign.profiles))) {
+            return false;
+        }
+    }
+    if (config.stream.emit_product_frames) {
+        if (!sink(product_frame(step_index, timestamp, campaign.profiles))) {
+            return false;
+        }
+    }
+    if (config.stream.emit_ground_observation && !campaign.ground_measurements.empty()) {
+        if (!sink(lidar_protocol::make_frame(
             lidar_protocol::FrameType::ground_obs,
             timestamp,
-            std::move(ground_payload)
-        ));
+            lidar_protocol::ground_to_json(campaign.ground_measurements.front())))) {
+            return false;
+        }
     }
+    return true;
+}
 
-    return frames;
+lidar_protocol::Frame SimDevice::camera_frame(
+    int step_index,
+    const std::string& timestamp,
+    const std::vector<lidar_core::LidarProfile>& profiles) const {
+    // 官网只证明存在同步相机能力，尚无图像编码和标定样本，因此只发送能力与指向元数据。
+    SimDeviceConfig config = this->config();
+    lidar_core::Json payload = lidar_core::Json::Object{
+        {"sequence_id", next_sequence_id_++},
+        {"camera_id", "synchronized_environment_camera"},
+        {"scan_cycle_index", step_index},
+        {"synchronized_to_lidar", true},
+        {"backlight_compensation_supported", config.hardware.camera_backlight_compensation},
+        {"night_ir_supported", config.hardware.camera_night_ir},
+        {"image_available", false},
+        {"image_unavailable_reason", "real camera sensor and vendor encoding are not available"},
+        {"data_provenance", "capability_metadata_from_public_spec"},
+    };
+    if (!profiles.empty()) {
+        payload["lidar_azimuth_deg"] = profiles.back().azimuth_deg;
+        payload["lidar_elevation_deg"] = profiles.back().elevation_deg;
+        payload["device_scan_pattern"] = scan_pattern_for_profile(config.scan, profiles.back());
+    }
+    return lidar_protocol::make_frame(
+        lidar_protocol::FrameType::camera,
+        timestamp,
+        std::move(payload));
+}
+
+lidar_protocol::Frame SimDevice::product_frame(
+    int step_index,
+    const std::string& timestamp,
+    const std::vector<lidar_core::LidarProfile>& profiles) const {
+    // 快速产品只给出无需实机标定即可解释的统计摘要，不输出伪造的定量 PM 结果。
+    double max_signal = 0.0;
+    double depolarization_sum = 0.0;
+    std::size_t depolarization_count = 0;
+    for (const auto& profile : profiles) {
+        if (!profile.raw_counts.empty()) {
+            max_signal = std::max(
+                max_signal,
+                *std::max_element(profile.raw_counts.begin(), profile.raw_counts.end()));
+        }
+        depolarization_sum += std::accumulate(
+            profile.depolarization_ratio.begin(),
+            profile.depolarization_ratio.end(),
+            0.0);
+        depolarization_count += profile.depolarization_ratio.size();
+    }
+    SimDeviceConfig config = this->config();
+    return lidar_protocol::make_frame(
+        lidar_protocol::FrameType::lidar_product,
+        timestamp,
+        lidar_core::Json::Object{
+            {"sequence_id", next_sequence_id_++},
+            {"scan_cycle_index", step_index},
+            {"azimuth_scan_pattern", config.scan.scan_pattern_for_cycle(step_index)},
+            {"scheduled_elevation_deg", config.scan.elevation_for_cycle(step_index)},
+            {"product_level", "emulator_quicklook"},
+            {"ray_count", static_cast<int>(profiles.size())},
+            {"range_bin_count", config.hardware.range_bin_count()},
+            {"maximum_primary_signal", max_signal},
+            {"mean_volume_depolarization_ratio", depolarization_count == 0
+                ? 0.0
+                : depolarization_sum / static_cast<double>(depolarization_count)},
+            {"quantitative_pm_calibrated", false},
+            {"calibration_status", config.scene.calibration_status},
+            {"data_provenance", "derived_from_synthetic_receiver_channels"},
+        });
+}
+
+int SimDevice::total_steps() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return initialized_ ? config_.campaign_cycles : 0;
+}
+
+int SimDevice::minutes_per_step() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.minutes_per_cycle;
+}
+
+int SimDevice::inter_frame_delay_ms() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.stream.inter_frame_delay_ms;
+}
+
+lidar_core::SiteInfo SimDevice::site_info() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return lidar_core::SiteInfo{
+        config_.site.site_name,
+        config_.site.latitude_deg,
+        config_.site.longitude_deg,
+        config_.site.altitude_m,
+        config_.site.site_id,
+    };
+}
+
+SimDeviceConfig SimDevice::config() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_;
+}
+
+bool SimDevice::is_streaming() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return initialized_ && run_state_ == DeviceRunState::scanning;
+}
+
+DeviceRunState SimDevice::run_state() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return run_state_;
 }
 
 lidar_protocol::Frame SimDevice::ground_frame(int step_index) const {
-    if (!initialized_ || step_index < 0 || step_index >= static_cast<int>(ground_measurements_.size())) {
-        return lidar_protocol::make_frame(
-            lidar_protocol::FrameType::ground_obs,
-            "",
-            lidar_core::Json::Object{}
-        );
+    lidar_core::GroundMeasurement ground;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ground = last_ground_measurement_;
+        if (ground.site_id.empty()) {
+            ground.site_id = config_.site.site_id;
+        }
     }
-
-    const auto& gm = ground_measurements_[step_index];
+    if (ground.timestamp.empty()) {
+        ground.timestamp = timestamp_for_step(step_index);
+    }
     return lidar_protocol::make_frame(
         lidar_protocol::FrameType::ground_obs,
-        gm.timestamp,
-        lidar_protocol::ground_to_json(gm)
-    );
+        ground.timestamp,
+        lidar_protocol::ground_to_json(ground));
 }
 
 lidar_protocol::Frame SimDevice::status_frame(int step_index) const {
-    int safe_step = std::max(0, std::min(step_index, total_steps() - 1));
-    std::string timestamp = timestamps_.empty() ? "" : timestamps_[safe_step];
-    lidar_core::Json payload = lidar_core::Json::Object{
-        {"site_id", config_.site_id},
-        {"site_name", config_.site_name},
-        {"instrument_preset", config_.instrument_preset},
-        {"application_mode", config_.application_mode},
-        {"vendor_profile", config_.vendor_profile},
-        {"device_model", "SIM-FIELD-PM-LIDAR"},
-        {"firmware_version", "sim-0.3.0"},
-        {"protocol_version", "jsonl-lidar-0.2"},
-        {"total_steps", total_steps()},
-        {"minutes_per_step", config_.minutes_per_step},
-        {"simulated_span_minutes", total_steps() * config_.minutes_per_step},
-        {"time_axis_semantics", "one_step_per_complete_scan_cycle"},
-        {"continuous_stream", true},
-        {"cached_campaign_replay", true},
-        {"scan_modes", lidar_core::Json::Array{lidar_core::Json("stare"), lidar_core::Json("ppi_volume")}},
-        {"channels", lidar_core::Json::Array{lidar_core::Json("elastic_" + std::to_string(static_cast<int>(std::round(config_.wavelength_nm))) + "nm")}},
-        {"range_bin_count", config_.range_bin_count},
-        {"range_resolution_m", config_.range_bin_m},
-        {"max_range_m", config_.range_bin_count * config_.range_bin_m},
-        {"ppi_elevations_deg", lidar_core::Json::Array{}},
-        {"ppi_azimuth_start_deg", config_.ppi_azimuth_start_deg},
-        {"ppi_azimuth_stop_deg", config_.ppi_azimuth_stop_deg},
-        {"ppi_azimuth_step_deg", config_.ppi_azimuth_step_deg},
-        {"ppi_line_dwell_s", config_.ppi_line_dwell_s},
-        {"ppi_step_overhead_s", config_.ppi_step_overhead_s},
-        {"ppi_scan_overhead_s", config_.ppi_scan_overhead_s},
-        {"stare_dwell_s", config_.stare_dwell_s},
-        {"ppi_scan_cycle_s", sim_config_.ppi_scan_cycle_seconds()},
-        {"full_scan_cycle_s", config_.stare_dwell_s + sim_config_.ppi_scan_cycle_seconds()},
-        {"playback_time_scale", config_.playback_time_scale},
-        {"wavelength_nm", config_.wavelength_nm},
-        {"pulse_repetition_hz", config_.pulse_repetition_hz},
-        {"integrated_pulses_per_line", static_cast<int>(std::round(config_.pulse_repetition_hz * config_.ppi_line_dwell_s))},
-        {"pulse_energy_mj_nominal", config_.pulse_energy_mj},
-        {"full_overlap_m", config_.full_overlap_m},
-        {"detector_mode", "hybrid_photon_analog"},
-        {"supports_l3_volume", true},
-        {"data_level", "L0_raw_plus_device_telemetry"},
-    };
-    auto& elevations = payload["ppi_elevations_deg"].array_items();
-    for (double elevation : config_.ppi_elevations_deg) {
-        elevations.emplace_back(elevation);
+    SimDeviceConfig config;
+    DeviceRunState state;
+    std::string fault;
+    bool initialized = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        config = config_;
+        state = run_state_;
+        fault = fault_reason_;
+        initialized = initialized_;
     }
-    return lidar_protocol::make_frame(lidar_protocol::FrameType::status, timestamp, std::move(payload));
+
+    // 状态帧同时发布公开规格、仿真假设和未知项，客户端可据此区分证据等级。
+    lidar_core::Json::Array channels;
+    for (const char* id : {
+             "near_parallel_532nm",
+             "near_perpendicular_532nm",
+             "far_parallel_532nm",
+             "far_perpendicular_532nm"}) {
+        channels.emplace_back(id);
+    }
+    lidar_core::Json payload = lidar_core::Json::Object{
+        {"site_id", config.site.site_id},
+        {"site_name", config.site.site_name},
+        {"latitude_deg", config.site.latitude_deg},
+        {"longitude_deg", config.site.longitude_deg},
+        {"altitude_m", config.site.altitude_m},
+        {"manufacturer", config.hardware.manufacturer},
+        {"product_name", config.hardware.product_name},
+        {"device_model", config.hardware.model},
+        {"regulatory_model", config.hardware.regulatory_model},
+        {"device_state", device_run_state_to_string(state)},
+        {"initialized", initialized},
+        {"fault_reason", fault},
+        {"protocol_version", config.stream.emulator_protocol},
+        {"vendor_wire_protocol_known", config.stream.vendor_wire_protocol_known},
+        {"vendor_wire_protocol_emulated", false},
+        {"specification_basis", config.hardware.specification_basis},
+        {"specification_semantics", config.hardware.specification_semantics},
+        {"calibration_status", config.scene.calibration_status},
+        {"instrument_preset", "ylj5_aghj_i_lidar_mpl_public_spec"},
+        {"application_mode", config.scene.application_mode},
+        {"vendor_profile", "ylj5_jsonl_emulator"},
+        {"wavelength_nm", config.hardware.wavelength_nm},
+        {"wavelength_tolerance_nm", config.hardware.wavelength_tolerance_nm},
+        {"range_bin_count", config.hardware.range_bin_count()},
+        {"range_resolution_m", config.hardware.range_resolution_m},
+        {"maximum_range_m", config.hardware.maximum_range_m},
+        {"minimum_snr_db", config.hardware.minimum_snr_db},
+        {"beam_divergence_mrad_max", config.hardware.beam_divergence_mrad_max},
+        {"laser_power_instability_fraction_max",
+            config.hardware.laser_power_instability_fraction_max},
+        {"simulation_pulse_energy_jitter", config.scene.pulse_energy_jitter},
+        {"telescope_count", config.hardware.telescope_count},
+        {"near_telescope_aperture_mm", config.hardware.near_telescope_aperture_mm},
+        {"far_telescope_aperture_mm", config.hardware.far_telescope_aperture_mm},
+        {"polarization_channel", config.hardware.polarization_channel},
+        {"receiver_channels", lidar_core::Json(std::move(channels))},
+        {"scan_program_mode", config.scan.mode},
+        {"elevation_cycle_policy", config.scan.elevation_cycle_policy},
+        {"supported_scan_patterns", strings_to_json({
+            "horizontal_scan",
+            "vertical_observation",
+            "conical_scan",
+        })},
+        {"elevation_schedule", scan_schedule_to_json(config.scan)},
+        {"scheduled_elevations_deg", doubles_to_json(config.scan.elevations_deg)},
+        {"ppi_elevations_deg", doubles_to_json({config.scan.elevation_for_cycle(step_index)})},
+        {"active_ppi_elevation_deg", config.scan.elevation_for_cycle(step_index)},
+        {"active_azimuth_scan_pattern", config.scan.scan_pattern_for_cycle(step_index)},
+        {"elevation_schedule_index", static_cast<int>(
+            config.scan.elevation_schedule_index(step_index))},
+        {"elevation_schedule_source",
+            "public_modes_plus_literature_based_emulator_assumption"},
+        {"ppi_azimuth_start_deg", config.scan.azimuth_start_deg},
+        {"ppi_azimuth_stop_deg", config.scan.azimuth_stop_deg},
+        {"ppi_azimuth_step_deg", config.scan.azimuth_step_deg},
+        {"ppi_line_dwell_s", config.scan.line_dwell_s},
+        {"ppi_step_overhead_s", config.scan.movement_seconds_per_ray()},
+        {"ppi_scan_overhead_s", config.scan.scan_overhead_s},
+        {"stare_dwell_s", config.scan.vertical_stare_dwell_s},
+        {"horizontal_ray_count", config.scan.horizontal_ray_count()},
+        {"ppi_scan_cycle_s", config.scan.horizontal_scan_cycle_seconds()},
+        {"full_scan_cycle_s", config.scan.full_scan_cycle_seconds()},
+        {"elevation_schedule_total_s", config.scan.elevation_schedule_seconds()},
+        {"playback_time_scale", config.stream.playback_time_scale},
+        {"pulse_repetition_hz", config.scene.pulse_repetition_hz},
+        {"integrated_pulses_per_line", config.scan.integrated_pulses_per_ray(
+            config.scene.pulse_repetition_hz)},
+        {"total_steps", config.campaign_cycles},
+        {"minutes_per_step", config.minutes_per_cycle},
+        {"ingress_protection", config.hardware.ingress_protection},
+        {"enclosure_material", config.hardware.enclosure_material},
+        {"autonomous_operation", config.hardware.autonomous_operation},
+        {"supports_wired_network", config.hardware.supports_wired_network},
+        {"supports_wireless_network", config.hardware.supports_wireless_network},
+        {"supports_serial", config.hardware.supports_serial},
+        {"supports_usb", config.hardware.supports_usb},
+        {"supports_vehicle_operation", config.hardware.supports_vehicle_operation},
+        {"maximum_vehicle_speed_kmh", config.hardware.maximum_vehicle_speed_kmh},
+        {"maximum_mobile_record_spacing_m", config.hardware.maximum_mobile_record_spacing_m},
+        {"synchronized_camera", config.hardware.synchronized_camera},
+        {"camera_payload_mode", "capability_metadata_only"},
+        {"emit_truth_fields", config.stream.emit_truth_fields},
+        {"public_spec_enforced", config.enforce_public_spec},
+        {"unverified_model_parameters", strings_to_json({
+            "pulse_repetition_hz",
+            "pulse_energy_mj",
+            "system_constant",
+            "receiver_gain_and_overlap_curves",
+            "detector_noise_and_dead_time",
+            "automatic_scan_mode_sequence_and_5deg_conical_elevation",
+        })},
+    };
+    return lidar_protocol::make_frame(
+        lidar_protocol::FrameType::status,
+        timestamp_for_step(std::max(step_index, 0)),
+        std::move(payload));
 }
 
 lidar_protocol::Frame SimDevice::telemetry_frame(int step_index) const {
-    int safe_step = std::max(0, std::min(step_index, total_steps() - 1));
-    std::string timestamp = timestamps_.empty() ? "" : timestamps_[safe_step];
-    double phase = 2.0 * M_PI * static_cast<double>(safe_step) / std::max(total_steps(), 1);
-    bool high_humidity = !ground_measurements_.empty()
-        && safe_step < static_cast<int>(ground_measurements_.size())
-        && ground_measurements_[safe_step].relative_humidity > 0.78;
-    double window_transmission = std::max(0.72, 0.96 - 0.035 * safe_step - (high_humidity ? 0.05 : 0.0));
-    double enclosure_temp_c = 31.0 + 4.0 * std::sin(phase + 0.4);
-    double laser_head_temp_c = 34.0 + 3.2 * std::sin(phase + 0.9);
-    double background = config_.background_counts_mean * (0.85 + 0.22 * std::sin(phase - 0.4));
-    bool precipitation = high_humidity && std::sin(phase) > 0.55;
+    SimDeviceConfig config;
+    DeviceRunState state;
+    lidar_core::GroundMeasurement ground;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        config = config_;
+        state = run_state_;
+        ground = last_ground_measurement_;
+    }
+    // 当前没有实机遥测寄存器和抓包，数值仅用于测试客户端增量状态更新，并在帧内明确
+    // 标记 telemetry_provenance=synthetic_not_vendor_spec。
+    const double phase = 2.0 * 3.14159265358979323846
+        * static_cast<double>(step_index) / std::max(config.campaign_cycles, 1);
+    const double ambient_temperature = ground.site_id.empty()
+        ? 24.0 + 4.0 * std::sin(phase)
+        : ground.temperature_c;
+    const double relative_humidity = ground.site_id.empty()
+        ? 0.52 + 0.12 * std::cos(phase)
+        : ground.relative_humidity;
+    return lidar_protocol::make_frame(
+        lidar_protocol::FrameType::telemetry,
+        timestamp_for_step(std::max(step_index, 0)),
+        lidar_core::Json::Object{
+            {"site_id", config.site.site_id},
+            {"device_model", config.hardware.model},
+            {"device_state", device_run_state_to_string(state)},
+            {"electronics_temperature_c", ambient_temperature + 5.5},
+            {"ambient_temperature_c", ambient_temperature},
+            {"relative_humidity", relative_humidity},
+            {"pressure_hpa", 1012.0 + 3.0 * std::sin(phase + 0.4)},
+            {"estimated_power_w", 118.0 + 7.0 * std::sin(phase - 0.2)},
+            {"gimbal_azimuth_deg", config.scan.azimuth_start_deg},
+            {"gimbal_elevation_deg", config.scan.elevation_for_cycle(step_index)},
+            {"azimuth_scan_pattern", config.scan.scan_pattern_for_cycle(step_index)},
+            {"elevation_schedule_index", static_cast<int>(
+                config.scan.elevation_schedule_index(step_index))},
+            {"camera_online", config.hardware.synchronized_camera},
+            {"laser_enabled", state == DeviceRunState::scanning},
+            {"telemetry_provenance", "synthetic_not_vendor_spec"},
+            {"calibration_status", config.scene.calibration_status},
+        });
+}
 
-    lidar_core::Json payload = lidar_core::Json::Object{};
-    payload["site_id"] = config_.site_id;
-    payload["sequence_id"] = next_sequence_id_ + safe_step;
-    payload["device_state"] = std::string(precipitation ? "weather_hold" : "running");
-    payload["scan_scheduler_state"] = "executing_volume_scan";
-    payload["gps_lock"] = true;
-    payload["ntp_sync"] = true;
-    payload["clock_offset_ms"] = 1.5 + 0.6 * std::sin(phase);
-    payload["enclosure_temp_c"] = enclosure_temp_c;
-    payload["laser_head_temp_c"] = laser_head_temp_c;
-    payload["detector_temp_c"] = 22.5 + 0.8 * std::cos(phase);
-    payload["relative_humidity_internal"] = 0.36 + 0.05 * std::sin(phase + 1.2);
-    payload["window_transmission"] = window_transmission;
-    payload["window_contamination_index"] = std::min(1.0, std::max(0.0, 1.0 - window_transmission));
-    payload["rain_sensor_wet"] = precipitation;
-    payload["sun_background_counts"] = std::max(0.0, background);
-    payload["laser_energy_mj_nominal"] = config_.pulse_energy_mj;
-    payload["laser_energy_jitter"] = config_.pulse_energy_jitter;
-    int rays_per_scan = static_cast<int>(sim_config_.effective_ppi_elevations_deg().size()
-        * sim_config_.effective_ppi_azimuths_deg().size());
-    double shots_per_cycle = config_.pulse_repetition_hz
-        * (config_.stare_dwell_s
-            + static_cast<double>(std::max(rays_per_scan, 1)) * config_.ppi_line_dwell_s);
-    payload["laser_shots_total"] = static_cast<int>(std::round(
-        static_cast<double>(safe_step) * shots_per_cycle));
-    payload["fan_state"] = std::string(enclosure_temp_c > 33.0 ? "high" : "normal");
-    payload["door_state"] = "closed";
-    payload["wiper_state"] = std::string(precipitation ? "active" : "idle");
-    payload["diagnostic_flags"] = lidar_core::Json::Array{};
-    auto& flags = payload["diagnostic_flags"].array_items();
-    if (window_transmission < 0.85) {
-        flags.emplace_back("window-transmission-low");
+lidar_protocol::Frame SimDevice::handle_command(const lidar_core::Json& command) {
+    std::string name = get_string(command, "command");
+    if (name.empty()) {
+        name = get_string(command, "action");
     }
-    if (precipitation) {
-        flags.emplace_back("precipitation-filter-active");
+    if (name.empty()) {
+        name = get_string(command, "name");
     }
-    if (background > config_.background_counts_mean * 1.05) {
-        flags.emplace_back("high-solar-background");
+    name = lowercase(name);
+    const std::string request_id = get_string(command, "request_id");
+
+    bool accepted = false;
+    std::string message;
+    std::vector<std::string> violations;
+    DeviceRunState resulting_state = DeviceRunState::fault;
+    SimDeviceConfig resulting_config;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        resulting_state = run_state_;
+        if (!initialized_ && name != "get_status" && name != "status") {
+            message = "device initialization failed: " + fault_reason_;
+        } else if (name == "start" || name == "resume") {
+            run_state_ = DeviceRunState::scanning;
+            resulting_state = run_state_;
+            accepted = true;
+            message = "scan streaming started";
+        } else if (name == "pause") {
+            run_state_ = DeviceRunState::paused;
+            resulting_state = run_state_;
+            accepted = true;
+            message = "scan streaming paused";
+        } else if (name == "stop") {
+            run_state_ = DeviceRunState::stopped;
+            resulting_state = run_state_;
+            accepted = true;
+            message = "scan streaming stopped";
+        } else if (name == "get_status" || name == "status") {
+            accepted = true;
+            resulting_state = run_state_;
+            message = "status returned";
+        } else if (name == "set_scan" || name == "configure_scan") {
+            // 命令先修改配置副本，只有全部公开规格校验通过后才原子替换当前配置；
+            // 失败命令不会留下只更新了一半的扫描计划。
+            SimDeviceConfig candidate = config_;
+            const auto& parameters = command_parameters(command);
+            if (parameters.contains("mode") && parameters.at("mode").is_string()) {
+                candidate.scan.mode = parameters.at("mode").string_value();
+            }
+            if (parameters.contains("elevation_cycle_policy")
+                && parameters.at("elevation_cycle_policy").is_string()) {
+                candidate.scan.elevation_cycle_policy =
+                    parameters.at("elevation_cycle_policy").string_value();
+            }
+            assign_number_if_present(parameters, "azimuth_start_deg", "ppi_azimuth_start_deg",
+                candidate.scan.azimuth_start_deg);
+            assign_number_if_present(parameters, "azimuth_stop_deg", "ppi_azimuth_stop_deg",
+                candidate.scan.azimuth_stop_deg);
+            assign_number_if_present(parameters, "azimuth_step_deg", "ppi_azimuth_step_deg",
+                candidate.scan.azimuth_step_deg);
+            assign_number_if_present(parameters, "line_dwell_s", "ppi_line_dwell_s",
+                candidate.scan.line_dwell_s);
+            assign_number_if_present(parameters, "scan_speed_deg_s", nullptr,
+                candidate.scan.scan_speed_deg_s);
+            assign_number_if_present(parameters, "pointing_settle_s", nullptr,
+                candidate.scan.pointing_settle_s);
+            assign_number_if_present(parameters, "scan_overhead_s", "ppi_scan_overhead_s",
+                candidate.scan.scan_overhead_s);
+            assign_number_if_present(parameters, "vertical_stare_dwell_s", "stare_dwell_s",
+                candidate.scan.vertical_stare_dwell_s);
+            candidate.scan.include_vertical_stare = get_bool(
+                parameters,
+                "include_vertical_stare",
+                candidate.scan.include_vertical_stare);
+            if (parameters.contains("elevations_deg")
+                && parameters.at("elevations_deg").is_array()) {
+                candidate.scan.elevations_deg.clear();
+                for (const auto& value : parameters.at("elevations_deg").array_items()) {
+                    if (value.is_number()) {
+                        candidate.scan.elevations_deg.push_back(value.number_value());
+                    }
+                }
+            } else if (parameters.contains("ppi_elevations_deg")
+                && parameters.at("ppi_elevations_deg").is_array()) {
+                candidate.scan.elevations_deg.clear();
+                for (const auto& value : parameters.at("ppi_elevations_deg").array_items()) {
+                    if (value.is_number()) {
+                        candidate.scan.elevations_deg.push_back(value.number_value());
+                    }
+                }
+            }
+            violations = candidate.public_spec_violations();
+            if (violations.empty()) {
+                config_ = std::move(candidate);
+                accepted = true;
+                message = "scan configuration applied";
+            } else {
+                message = "scan configuration violates public device requirements";
+            }
+            resulting_state = run_state_;
+        } else {
+            message = name.empty() ? "missing command name" : "unsupported command: " + name;
+        }
+        resulting_config = config_;
     }
-    return lidar_protocol::make_frame(lidar_protocol::FrameType::status, timestamp, std::move(payload));
+
+    lidar_core::Json payload = lidar_core::Json::Object{
+        {"request_id", request_id},
+        {"command", name},
+        {"accepted", accepted},
+        {"result", accepted ? "ok" : "error"},
+        {"message", message},
+        {"device_state", device_run_state_to_string(resulting_state)},
+        {"violations", strings_to_json(violations)},
+    };
+    payload["status"] = lidar_core::Json::Object{
+        {"device_model", resulting_config.hardware.model},
+        {"regulatory_model", resulting_config.hardware.regulatory_model},
+        {"vendor_wire_protocol_known", resulting_config.stream.vendor_wire_protocol_known},
+        {"range_resolution_m", resulting_config.hardware.range_resolution_m},
+        {"maximum_range_m", resulting_config.hardware.maximum_range_m},
+        {"azimuth_start_deg", resulting_config.scan.azimuth_start_deg},
+        {"azimuth_stop_deg", resulting_config.scan.azimuth_stop_deg},
+        {"azimuth_step_deg", resulting_config.scan.azimuth_step_deg},
+        {"elevation_cycle_policy", resulting_config.scan.elevation_cycle_policy},
+        {"elevations_deg", doubles_to_json(resulting_config.scan.elevations_deg)},
+        {"line_dwell_s", resulting_config.scan.line_dwell_s},
+        {"scan_speed_deg_s", resulting_config.scan.scan_speed_deg_s},
+        {"calibration_status", resulting_config.scene.calibration_status},
+    };
+    return lidar_protocol::make_frame(
+        lidar_protocol::FrameType::command_result,
+        format_timestamp(std::chrono::system_clock::now()),
+        std::move(payload));
 }
 
 } // namespace lidar_server
