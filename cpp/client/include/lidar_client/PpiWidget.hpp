@@ -1,48 +1,29 @@
 /**
- * @file ppi_widget.hpp
- * @brief PPI 热力图 Widget：用 QPainter 将消光/PM 数据渲染为 2D 热力图。
- *
- * 数据来源：一个时间步内多条 PPI 射线的处理结果（极坐标 → 屏幕像素）。
- * 颜色映射：低值=蓝/绿，高值=黄/红（jet 或 turbo 色表）。
+ * @file PpiWidget.hpp
+ * @brief 水平/锥形扫描的极坐标产品视图。
  */
 #pragma once
 
-#ifdef LIDAR_ENABLE_QT
-
 #include <QImage>
 #include <QWidget>
+
 #include <vector>
 
-#include "lidar_core/LidarCore.hpp"
+#include "lidar_client/DisplaySnapshot.hpp"
 
 namespace lidar_client {
 
-/**
- * @brief PPI 热力图显示 Widget。
- */
+/** @brief 用 ENU 投影显示方位扫描回波、消光或已标定 PM。 */
 class PpiWidget : public QWidget {
     Q_OBJECT
+
 public:
     explicit PpiWidget(QWidget* parent = nullptr);
 
-    /**
-     * @brief 设置当前时间步的处理结果。
-     * @param profiles 所有 PPI 射线（已处理）
-     * @param field 要显示的数据字段："pm25", "extinction", "dry_extinction"
-     * @param max_range_m 最大显示距离（米）
-     */
-    void set_data(const std::vector<lidar_core::ProcessedProfile>& profiles,
-                  const std::string& field = "pm25",
-                  double max_range_m = 5000.0);
+    /** @brief 接收工作线程预计算的方位栅格和色标元数据。 */
+    void set_snapshot(const DisplaySnapshot& snapshot);
 
-    /**
-     * @brief 叠加显示热点。
-     */
-    void set_hotspots(const std::vector<lidar_core::Hotspot>& hotspots);
-
-    /**
-     * @brief 设置标题。
-     */
+    /** @brief 设置视图标题。 */
     void set_title(const QString& title);
 
     QSize minimumSizeHint() const override;
@@ -52,17 +33,13 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 private:
-    QImage canvas_;
-    QString title_ = "PPI Heatmap";
-    std::vector<lidar_core::Hotspot> hotspots_;
-    double max_range_m_ = 5000.0;
-
-    /**
-     * @brief 将一个数值映射为颜色（turbo 色表）。
-     */
-    static QColor value_to_color(double normalized);
+    QImage canvas_;                            ///< 当前周期预渲染的极坐标图像。
+    QString title_ = QStringLiteral("方位扫描"); ///< 当前图层标题。
+    QString field_label_ = QStringLiteral("干消光"); ///< 当前显示物理量名称。
+    std::vector<lidar_core::Hotspot> hotspots_; ///< 当前已标定热点叠加层。
+    double max_range_m_ = 5000.0;             ///< 当前显示半径（米）。
+    double color_max_ = 0.0;                  ///< 当前色标 98% 分位上限。
+    int ray_count_ = 0;                       ///< 当前参与绘制的方位射线数。
 };
 
 } // namespace lidar_client
-
-#endif // LIDAR_ENABLE_QT

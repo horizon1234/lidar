@@ -1,120 +1,91 @@
 /**
- * @file alarm_panel.cpp
- * @brief 告警面板 Widget 实现。
+ * @file AlarmPanel.cpp
+ * @brief 已标定热点与质量控制面板实现。
  */
-#ifdef LIDAR_ENABLE_QT
-
 #include "lidar_client/AlarmPanel.hpp"
 
 #include <QHeaderView>
 #include <QSplitter>
 #include <QVBoxLayout>
-#include <sstream>
 
 namespace lidar_client {
 
-// =========================================================================
-// AlarmPanel
-// =========================================================================
-
 AlarmPanel::AlarmPanel(QWidget* parent)
-    : QWidget(parent)
-{
+    : QWidget(parent) {
     auto* layout = new QVBoxLayout(this);
-
+    layout->setContentsMargins(0, 0, 0, 0);
     auto* splitter = new QSplitter(Qt::Vertical, this);
-
-    // 事件表格
-    table_ = new QTableWidget(this);
-    table_->setColumnCount(5);
-    table_->setHorizontalHeaderLabels({"事件ID", "状态", "PM2.5 (µg/m³)",
-                                        "首次检测", "更新次数"});
-    table_->horizontalHeader()->setStretchLastSection(true);
+    table_ = new QTableWidget(splitter);
+    table_->setColumnCount(4);
+    table_->setHorizontalHeaderLabels({
+        QStringLiteral("热点"),
+        QStringLiteral("等级"),
+        QStringLiteral("峰值 PM2.5"),
+        QStringLiteral("面积")});
+    table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    table_->verticalHeader()->setVisible(false);
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-
-    // 详情视图
-    detail_view_ = new QTextEdit(this);
+    detail_view_ = new QTextEdit(splitter);
     detail_view_->setReadOnly(true);
-    detail_view_->setPlaceholderText("选择一个事件以查看详情...");
-
+    detail_view_->setHtml(QStringLiteral(
+        "<h3>周期质量控制</h3><p>等待设备完成首个扫描周期。</p>"));
     splitter->addWidget(table_);
     splitter->addWidget(detail_view_);
-    splitter->setSizes({250, 200});
-
+    splitter->setSizes({260, 260});
     layout->addWidget(splitter);
-
     connect(table_, &QTableWidget::cellClicked, this, &AlarmPanel::on_event_selected);
 }
 
-void AlarmPanel::update_data(const HotspotTracker& tracker,
-                              const DisposalLinkage& linkage) {
-    // 保存当前事件列表
-    current_events_ = tracker.active_events();
-
-    // 也可以包含最近 resolved 的事件
-    // 这里只显示活跃事件，保持简洁
-
-    table_->setRowCount(static_cast<int>(current_events_.size()));
-
-    for (int i = 0; i < static_cast<int>(current_events_.size()); ++i) {
-        const auto& evt = current_events_[i];
-        table_->setItem(i, 0, new QTableWidgetItem(QString::fromStdString(evt->event_id())));
-        table_->setItem(i, 1, new QTableWidgetItem(QString::fromStdString(
-                                evt->current_state_string())));
-        table_->setItem(i, 2, new QTableWidgetItem(
-                                QString::number(evt->peak_pm25_ugm3(), 'f', 1)));
-        table_->setItem(i, 3, new QTableWidgetItem(QString::fromStdString(
-                                evt->first_detected_timestamp())));
-        table_->setItem(i, 4, new QTableWidgetItem(QString::number(
-                                evt->update_count())));
+void AlarmPanel::update_data(const StepResult& result) {
+    hotspots_ = result.hotspots;
+    qc_flags_ = result.qc_flags;
+    pm_calibrated_ = result.pm_calibrated;
+    table_->setRowCount(static_cast<int>(hotspots_.size()));
+    for (int row = 0; row < static_cast<int>(hotspots_.size()); ++row) {
+        const auto& hotspot = hotspots_[static_cast<std::size_t>(row)];
+        table_->setItem(row, 0, new QTableWidgetItem(QString::fromStdString(hotspot.hotspot_id)));
+        table_->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(hotspot.severity)));
+        table_->setItem(row, 2, new QTableWidgetItem(QString::number(hotspot.peak_pm25_ugm3, 'f', 1)));
+        table_->setItem(row, 3, new QTableWidgetItem(QString::number(hotspot.estimated_area_m2, 'f', 0) + " m²"));
     }
+
+    QString html = QStringLiteral("<h3>周期质量控制</h3>");
+    html += QStringLiteral("<p>原始射线：%1<br>拒绝射线：%2<br>平均处理：%3 ms</p>")
+        .arg(result.raw_count)
+        .arg(result.rejected_count)
+        .arg(result.mean_processing_latency_ms, 0, 'f', 2);
+    if (!pm_calibrated_) {
+        html += QStringLiteral("<p><b>PM 未标定：</b>当前仅展示消光与退偏产品，不生成浓度告警。</p>");
+    }
+    html += QStringLiteral("<ul>");
+    for (const auto& flag : qc_flags_) {
+        html += QStringLiteral("<li>%1</li>").arg(QString::fromStdString(flag).toHtmlEscaped());
+    }
+    html += QStringLiteral("</ul>");
+    detail_view_->setHtml(html);
 }
 
 void AlarmPanel::on_event_selected(int row) {
-    if (row < 0 || row >= static_cast<int>(current_events_.size())) {
-        return;
+    if (row < 0 || row >= static_cast<int>(hotspots_.size())) return;
+    const auto& hotspot = hotspots_[static_cast<std::size_t>(row)];
+    QString coordinates = QStringLiteral("未知");
+    if (hotspot.centroid_enu_m.size() >= 3) {
+        coordinates = QStringLiteral("E %1 m / N %2 m / U %3 m")
+            .arg(hotspot.centroid_enu_m[0], 0, 'f', 1)
+            .arg(hotspot.centroid_enu_m[1], 0, 'f', 1)
+            .arg(hotspot.centroid_enu_m[2], 0, 'f', 1);
     }
-
-    const auto& evt = current_events_[row];
-
-    std::ostringstream oss;
-    oss << "<h2>事件 " << evt->event_id() << "</h2>";
-    oss << "<p><b>当前状态:</b> " << evt->current_state_string() << "</p>";
-    oss << "<p><b>峰值 PM2.5:</b> " << std::fixed << std::setprecision(1)
-        << evt->peak_pm25_ugm3() << " µg/m³</p>";
-    oss << "<p><b>首次检测:</b> " << evt->first_detected_timestamp() << "</p>";
-    oss << "<p><b>更新次数:</b> " << evt->update_count() << "</p>";
-
-    // 质心坐标
-    oss << "<h3>质心坐标 (ENU)</h3><ul>";
-    if (evt->centroid_enu_m().size() >= 2) {
-        oss << "<li>East: " << evt->centroid_enu_m()[0] << " m</li>";
-        oss << "<li>North: " << evt->centroid_enu_m()[1] << " m</li>";
-    }
-    oss << "</ul>";
-
-    // 状态变更历史
-    oss << "<h3>状态变更历史</h3>";
-    auto history = evt->state_changes();
-    oss << "<table border='1' cellpadding='4' style='border-collapse:collapse;'>";
-    oss << "<tr><th>时间</th><th>从</th><th>到</th><th>原因</th><th>PM2.5</th></tr>";
-    for (const auto& sc : history) {
-        oss << "<tr>";
-        oss << "<td>" << sc.timestamp << "</td>";
-        oss << "<td>" << sc.from_state << "</td>";
-        oss << "<td>" << sc.to_state << "</td>";
-        oss << "<td>" << sc.reason << "</td>";
-        oss << "<td>" << std::fixed << std::setprecision(1) << sc.peak_pm25_ugm3
-            << "</td>";
-        oss << "</tr>";
-    }
-    oss << "</table>";
-
-    detail_view_->setHtml(QString::fromStdString(oss.str()));
+    detail_view_->setHtml(QStringLiteral(
+        "<h3>%1</h3><p>等级：%2<br>峰值 PM2.5：%3 µg/m³<br>平均 PM2.5：%4 µg/m³"
+        "<br>质心：%5<br>像元：%6</p>")
+        .arg(QString::fromStdString(hotspot.hotspot_id).toHtmlEscaped())
+        .arg(QString::fromStdString(hotspot.severity).toHtmlEscaped())
+        .arg(hotspot.peak_pm25_ugm3, 0, 'f', 1)
+        .arg(hotspot.mean_pm25_ugm3, 0, 'f', 1)
+        .arg(coordinates)
+        .arg(hotspot.cell_count));
 }
 
 } // namespace lidar_client
-
-#endif // LIDAR_ENABLE_QT

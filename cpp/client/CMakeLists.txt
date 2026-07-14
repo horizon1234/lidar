@@ -1,17 +1,50 @@
-# cpp/client/CMakeLists.txt
-# 主控客户端模块（帧处理 + TCP 客户端）
+# Linux YLJ5 图形客户端。
 
-# ---- 客户端静态库 ----
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "YLJ5 client supports Linux only")
+endif()
+
+# 开发机 Qt 安装在 /opt。允许调用方用 LIDAR_QT_ROOT 覆盖；未指定时优先使用版本号
+# 最高的 /opt/Qt6*/<version>/gcc_64，避免依赖用户 shell 中的环境变量。
+set(LIDAR_QT_ROOT "" CACHE PATH "Qt 6 gcc_64 installation root")
+if(LIDAR_QT_ROOT)
+    list(PREPEND CMAKE_PREFIX_PATH "${LIDAR_QT_ROOT}")
+else()
+    file(GLOB _lidar_qt_roots LIST_DIRECTORIES true "/opt/Qt6*/6.*/gcc_64")
+    if(_lidar_qt_roots)
+        list(SORT _lidar_qt_roots COMPARE NATURAL ORDER DESCENDING)
+        list(GET _lidar_qt_roots 0 _lidar_qt_root)
+        list(PREPEND CMAKE_PREFIX_PATH "${_lidar_qt_root}")
+        message(STATUS "YLJ5 client Qt root: ${_lidar_qt_root}")
+    endif()
+endif()
+
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Network)
+
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC ON)
+
 add_library(lidar_client STATIC
-    src/TcpClient.cpp
     src/FrameProcessor.cpp
     src/DeviceStatusModel.cpp
     src/ScanCycleMonitor.cpp
-    # 闭环管理组件
+    src/DisplaySnapshot.cpp
+    src/LidarClientWorker.cpp
+    src/PpiWidget.cpp
+    src/VerticalProfileWidget.cpp
+    src/AlarmPanel.cpp
+    src/MainWindow.cpp
     src/AlarmStateMachine.cpp
     src/HotspotTracker.cpp
     src/DisposalLinkage.cpp
     src/ReportGenerator.cpp
+    include/lidar_client/LidarClientWorker.hpp
+    include/lidar_client/DisplaySnapshot.hpp
+    include/lidar_client/MainWindow.hpp
+    include/lidar_client/PpiWidget.hpp
+    include/lidar_client/VerticalProfileWidget.hpp
+    include/lidar_client/AlarmPanel.hpp
 )
 
 target_include_directories(lidar_client PUBLIC
@@ -21,59 +54,20 @@ target_include_directories(lidar_client PUBLIC
 target_link_libraries(lidar_client PUBLIC
     lidar_protocol
     lidar_core
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::Network
 )
 
-# 客户端需要线程库
-find_package(Threads REQUIRED)
-target_link_libraries(lidar_client PUBLIC Threads::Threads)
-
-# Windows 需要链接 ws2_32
-if(WIN32)
-    target_link_libraries(lidar_client PUBLIC ws2_32)
-endif()
-
-# ---- 客户端可执行文件（无头模式）----
-add_executable(lidar_control_client
-    apps/LidarControlClient.cpp
+target_compile_definitions(lidar_client PUBLIC
+    LIDAR_CLIENT_LINUX_QT=1
 )
 
-target_link_libraries(lidar_control_client PRIVATE
+add_executable(lidar_gui
+    apps/LidarGui.cpp
+)
+
+target_link_libraries(lidar_gui PRIVATE
     lidar_client
-    lidar_protocol
-    lidar_core
 )
-
-# ---- Qt UI（可选，需要 LIDAR_ENABLE_QT）----
-option(LIDAR_ENABLE_QT "启用 Qt6 GUI 界面" OFF)
-if(LIDAR_ENABLE_QT)
-    set(CMAKE_AUTOMOC ON)
-    set(CMAKE_AUTORCC ON)
-    set(CMAKE_AUTOUIC ON)
-
-    find_package(Qt6 COMPONENTS Widgets QUIET)
-    if(Qt6_FOUND)
-        message(STATUS "Qt6 Widgets 找到，启用 GUI 客户端")
-
-        # 将 Qt UI 源文件加入客户端库
-        target_sources(lidar_client PRIVATE
-            src/PpiWidget.cpp
-            src/AlarmPanel.cpp
-            src/MainWindow.cpp
-        )
-
-        target_compile_definitions(lidar_client PUBLIC LIDAR_ENABLE_QT)
-        target_link_libraries(lidar_client PUBLIC Qt6::Widgets)
-
-        # GUI 可执行文件
-        add_executable(lidar_gui
-            apps/LidarGui.cpp
-        )
-        target_link_libraries(lidar_gui PRIVATE
-            lidar_client
-            lidar_protocol
-            lidar_core
-        )
-    else()
-        message(WARNING "LIDAR_ENABLE_QT 已启用但未找到 Qt6 Widgets，跳过 GUI")
-    endif()
-endif()
