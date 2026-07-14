@@ -210,6 +210,9 @@ int main(int argc, char* argv[]) {
                 "Reduced test range should contain 20 bins");
         require(raw->payload.at("channels").array_items().size() == 4,
                 "Raw frame should serialize all four physical channels");
+        require(raw->payload.contains("simulated_receiver_response")
+                    && raw->payload.at("simulated_receiver_response").is_object(),
+                "Synthetic raw frames should expose the assumed detector response model");
         require(!raw->payload.contains("true_backscatter"),
                 "Truth fields should be omitted from the live protocol by default");
 
