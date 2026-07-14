@@ -40,7 +40,7 @@ LidarClientWorker::LidarClientWorker(ProcessorConfig config, QObject* parent)
     qRegisterMetaType<DeviceStatusSnapshotPtr>("lidar_client::DeviceStatusSnapshotPtr");
     qRegisterMetaType<DisplaySnapshotPtr>("lidar_client::DisplaySnapshotPtr");
     processor_.set_step_complete_callback([this](StepResult result) {
-        const auto summary = scan_monitor_.summary_for_timestamp(result.timestamp);
+        const auto summary = scan_monitor_.take_summary_for_timestamp(result.timestamp);
         if (summary.expected_rays > 0 && !summary.complete) {
             result.qc_flags.emplace_back("scan-cycle-incomplete");
         }
@@ -89,6 +89,7 @@ void LidarClientWorker::connect_to_server(const QString& host, quint16 port) {
     shutting_down_ = false;
     ensure_socket();
     receive_buffer_.clear();
+    scan_monitor_.reset();
     if (socket_->state() != QAbstractSocket::UnconnectedState) {
         socket_->abort();
     }
@@ -105,6 +106,7 @@ void LidarClientWorker::disconnect_from_server() {
         }
     }
     receive_buffer_.clear();
+    scan_monitor_.reset();
     emit connection_changed(false, QStringLiteral("已主动断开"));
 }
 

@@ -96,7 +96,6 @@ SimulatedFields simulate_profile_fields(
         // 分子后向散射约为消光的 1/8（即标准分子激光比约 8 sr）
         double molecular_beta = molecular_ext / 8.0;
 
-        double legacy_plume = simulation.application_mode == "legacy_demo";
         double mobile_offset_m = simulation.application_mode == "mobile_mapping"
             ? simulation.vehicle_speed_ms * 60.0 * static_cast<double>(step_index)
             : 0.0;
@@ -111,39 +110,29 @@ SimulatedFields simulate_profile_fields(
         double lofted_layer = 0.0;
         double plume_1 = 0.0;
         double plume_2 = 0.0;
-        if (legacy_plume) {
-            boundary_layer = (0.017 + 0.018 * (1.0 + std::sin(time_phase)) / 2.0) * std::exp(-altitude_m / 1200.0);
-            lofted_layer = 0.018 * gaussian(altitude_m, 1000.0 + 200.0 * std::sin(time_phase), 280.0);
-            plume_1 = 0.080 * gaussian(horizontal_m, 2200.0 + 250.0 * std::cos(time_phase), 420.0)
-                * gaussian(azimuth_delta(azimuth_deg, 80.0), 0.0, 18.0)
-                * gaussian(altitude_m, 850.0, 200.0);
-            plume_2 = 0.045 * gaussian(horizontal_m, 3500.0, 480.0)
-                * gaussian(azimuth_delta(azimuth_deg, 170.0), 0.0, 22.0)
-                * gaussian(altitude_m, 1200.0, 280.0);
-        } else {
-            // 边界层气溶胶：含日变化振幅项，随高度按 1200 m 标高衰减（商用尺度边界层）
-            double traffic_factor = simulation.application_mode == "urban_grid" ? 1.25 : 1.0;
-            double construction_factor = simulation.application_mode == "construction_site" ? 1.35 : 1.0;
-            boundary_layer = traffic_factor * (0.014 + 0.015 * (1.0 + std::sin(time_phase)) / 2.0) * std::exp(-altitude_m / 1200.0);
-            // 高架抬升层：高度约 1000 m 的高斯包络，常表示区域输送来的气溶胶层（商用尺度）
-            lofted_layer = 0.018 * gaussian(altitude_m, 1000.0 + 200.0 * std::sin(time_phase), 280.0);
-            // 烟羽 1：工地/工业源。源位随风平流，扩散宽度随时间增长，避免固定高斯团过于理想。
-            double source1_x = 1450.0 + 0.65 * advect_x_m;
-            double source1_y = 900.0 + 0.65 * advect_y_m;
-            double source1_range_sigma = 300.0 + 18.0 * std::sqrt(std::max(elapsed_s / 60.0, 0.0));
-            double source1_dist = std::hypot(ray_x_m - source1_x, ray_y_m - source1_y);
-            double emission_pulse = 0.65 + 0.55 * gaussian(std::sin(time_phase + 0.7), 0.8, 0.45);
-            plume_1 = construction_factor * 0.072 * emission_pulse
-                * gaussian(source1_dist, 0.0, source1_range_sigma)
-                * gaussian(altitude_m, 180.0 + 80.0 * wind_speed_ms, 140.0);
-            // 烟羽 2：城市交通/区域输送抬升层，偏远、较宽、强度较稳定。
-            double source2_x = -900.0 + 0.45 * advect_x_m;
-            double source2_y = 3150.0 + 0.45 * advect_y_m;
-            double source2_dist = std::hypot(ray_x_m - source2_x, ray_y_m - source2_y);
-            plume_2 = 0.042 * traffic_factor
-                * gaussian(source2_dist, 0.0, 760.0)
-                * gaussian(altitude_m, 650.0 + 180.0 * std::sin(time_phase), 260.0);
-        }
+        const double traffic_factor = simulation.application_mode == "urban_grid" ? 1.25 : 1.0;
+        const double construction_factor = simulation.application_mode == "construction_site" ? 1.35 : 1.0;
+        boundary_layer = traffic_factor
+            * (0.014 + 0.015 * (1.0 + std::sin(time_phase)) / 2.0)
+            * std::exp(-altitude_m / 1200.0);
+        lofted_layer = 0.018
+            * gaussian(altitude_m, 1000.0 + 200.0 * std::sin(time_phase), 280.0);
+        const double source1_x = 1450.0 + 0.65 * advect_x_m;
+        const double source1_y = 900.0 + 0.65 * advect_y_m;
+        const double source1_range_sigma = 300.0
+            + 18.0 * std::sqrt(std::max(elapsed_s / 60.0, 0.0));
+        const double source1_dist = std::hypot(ray_x_m - source1_x, ray_y_m - source1_y);
+        const double emission_pulse = 0.65
+            + 0.55 * gaussian(std::sin(time_phase + 0.7), 0.8, 0.45);
+        plume_1 = construction_factor * 0.072 * emission_pulse
+            * gaussian(source1_dist, 0.0, source1_range_sigma)
+            * gaussian(altitude_m, 180.0 + 80.0 * wind_speed_ms, 140.0);
+        const double source2_x = -900.0 + 0.45 * advect_x_m;
+        const double source2_y = 3150.0 + 0.45 * advect_y_m;
+        const double source2_dist = std::hypot(ray_x_m - source2_x, ray_y_m - source2_y);
+        plume_2 = 0.042 * traffic_factor
+            * gaussian(source2_dist, 0.0, 760.0)
+            * gaussian(altitude_m, 650.0 + 180.0 * std::sin(time_phase), 260.0);
         // 走航车辆近源扬尘，低空、近距离、随车坐标移动。
         double mobile_plume = simulation.application_mode == "mobile_mapping"
             ? 0.025 * gaussian(ray_x_m, 350.0, 280.0) * gaussian(ray_y_m, 0.0, 260.0) * gaussian(altitude_m, 70.0, 90.0)
@@ -165,7 +154,7 @@ SimulatedFields simulate_profile_fields(
         output.true_pm25.push_back(640.0 * aerosol_dry_ext + 210.0 * (plume_1 + mobile_plume) + 15.0);
         // PM10 略高于 PM2.5，额外含两个烟羽（粗粒贡献）和本底 22
         output.true_pm10.push_back(920.0 * aerosol_dry_ext + 260.0 * (plume_1 + plume_2 + 1.6 * mobile_plume) + 22.0);
-        // 默认沿用旧阈值 0.025；商用扇扫可提高该值，只把可处置烟羽核心记为真值热点。
+        // 仿真真值仅用于验证，不进入默认实时协议。
         output.true_hotspot_mask.push_back(
             (plume_1 + plume_2 + mobile_plume > simulation.truth_hotspot_ext_threshold) ? 1 : 0);
     }
@@ -263,7 +252,7 @@ std::vector<double> simulate_raw_counts(
 
 struct SimulatedReceiverChannels {
     std::vector<LidarChannel> channels; ///< 近/远场与平行/垂直偏振组成的四条物理通道。
-    std::vector<double> merged_parallel_counts; ///< 供旧处理链使用的近远场拼接平行通道。
+    std::vector<double> merged_parallel_counts; ///< 供实时反演使用的近远场拼接平行主通道。
     std::vector<double> merged_overlap; ///< 与拼接主通道对应的等效重叠因子。
     std::vector<double> depolarization_ratio; ///< 由粒径组成和热点状态构造的体退偏比真值。
 };
@@ -272,7 +261,7 @@ struct SimulatedReceiverChannels {
  * @brief 按 YLJ5 双望远镜和偏振能力生成四条接收通道。
  *
  * 近远场增益、重叠曲线和拼接距离尚无实机标定证据，因此只属于正演假设；函数同时
- * 生成兼容主通道，使现有单通道预处理和反演代码无需感知接收链拆分。
+ * 同时生成拼接平行主通道，作为客户端 Fernald 反演的输入。
  */
 SimulatedReceiverChannels simulate_ylj5_receiver_channels(
     const SimulatedFields& fields,

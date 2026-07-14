@@ -71,12 +71,6 @@ public:
     /** @brief 返回当前只读快照。 */
     const DeviceStatusSnapshot& snapshot() const { return snapshot_; }
 
-    /** @brief 将当前快照序列化为报表 JSON。 */
-    lidar_core::Json to_json() const;
-
-    /** @brief 生成适合终端日志展示的单行设备摘要。 */
-    std::string brief() const;
-
 private:
     DeviceStatusSnapshot snapshot_; ///< 按字段增量更新的最新设备状态快照。
 };

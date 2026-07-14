@@ -61,10 +61,6 @@ public:
 
     /** @brief 返回当前战役的周期总数；初始化失败时返回 0。 */
     int total_steps() const;
-    /** @brief 返回相邻场景周期的相位间隔（分钟）。 */
-    int minutes_per_step() const;
-    /** @brief 返回固定帧间隔覆盖值（ms）。 */
-    int inter_frame_delay_ms() const;
 
     /** @brief 返回当前站点信息副本。 */
     lidar_core::SiteInfo site_info() const;
@@ -79,8 +75,6 @@ public:
     /** @brief 执行仿真控制命令并返回结构化 command_result 帧。 */
     lidar_protocol::Frame handle_command(const lidar_core::Json& command);
 
-    /** @brief 构造最近一次合成地面观测帧。 */
-    lidar_protocol::Frame ground_frame(int step_index) const;
     /** @brief 构造设备能力、公开规格和校准状态帧。 */
     lidar_protocol::Frame status_frame(int step_index) const;
     /** @brief 构造明确标为合成值的设备遥测帧。 */

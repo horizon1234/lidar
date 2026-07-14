@@ -34,11 +34,11 @@ int main() {
             "2026-05-30T08:00",
             lidar_core::Json::Object{
                 {"site_id", "site-001"},
-                {"device_model", "SIM-FIELD-PM-LIDAR"},
+                {"device_model", "YLJ5"},
                 {"regulatory_model", "AGHJ-I-LIDAR(MPL)"},
                 {"vendor_wire_protocol_known", false},
-                {"vendor_profile", "raymetrics_pmeye_like"},
-                {"scan_program_mode", "scheduled_multi_elevation"},
+                {"vendor_profile", "ylj5_public_spec_digital_twin"},
+                {"scan_program_mode", "scheduled_azimuth_scan"},
                 {"active_azimuth_scan_pattern", "conical_scan"},
                 {"elevation_cycle_policy", "round_robin"},
                 {"scheduled_elevations_deg", lidar_core::Json::Array{0.0, 5.0}},
@@ -66,7 +66,7 @@ int main() {
                 "Stare dwell should parse");
         require(status.snapshot().full_scan_cycle_s == 395.0,
                 "Full scan cycle should parse");
-        require(status.snapshot().scan_program_mode == "scheduled_multi_elevation"
+        require(status.snapshot().scan_program_mode == "scheduled_azimuth_scan"
                     && status.snapshot().active_scan_pattern == "conical_scan",
                 "Active scan program and pattern should parse");
         require(status.snapshot().elevation_cycle_policy == "round_robin"
@@ -86,7 +86,7 @@ int main() {
             });
         require(status.update_from_frame(telemetry_frame),
                 "Telemetry frame should update model");
-        require(status.snapshot().device_model == "SIM-FIELD-PM-LIDAR",
+        require(status.snapshot().device_model == "YLJ5",
                 "Telemetry status must not erase device capabilities");
         require(status.snapshot().pulse_repetition_hz == 20.0,
                 "Telemetry status must preserve PRF");
@@ -105,7 +105,7 @@ int main() {
         monitor.observe_frame(raw_frame(0));
         monitor.observe_frame(raw_frame(2));
         monitor.observe_frame(raw_frame(2));
-        auto summary = monitor.summary_for_timestamp("2026-05-30T08:00");
+        auto summary = monitor.take_summary_for_timestamp("2026-05-30T08:00");
         require(summary.expected_rays == 3, "Expected rays should parse");
         require(summary.received_rays == 2, "Unique received rays should count");
         require(summary.duplicate_rays == 1, "Duplicate rays should count");
@@ -113,6 +113,8 @@ int main() {
                     && summary.missing_ray_indices.front() == 1,
                 "Missing ray index should be reported");
         require(!summary.complete, "Incomplete cycle should not pass");
+        require(monitor.take_summary_for_timestamp("2026-05-30T08:00").expected_rays == 0,
+                "Finalized scan cycle should release monitor state");
 
         std::cout << "Client device telemetry assertions passed.\n";
         return 0;

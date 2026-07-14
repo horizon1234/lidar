@@ -154,7 +154,6 @@ void MainWindow::setup_ui() {
 
     auto* products = new QTabWidget(central);
     ppi_widget_ = new PpiWidget(products);
-    ppi_widget_->set_title(QStringLiteral("方位扫描 - 干消光"));
     profile_widget_ = new VerticalProfileWidget(products);
     products->addTab(ppi_widget_, QStringLiteral("方位扫描"));
     products->addTab(profile_widget_, QStringLiteral("垂直廓线"));
@@ -224,7 +223,6 @@ void MainWindow::setup_worker() {
 }
 
 void MainWindow::update_action_state(bool connected) {
-    connected_ = connected;
     connect_action_->setEnabled(!connected);
     disconnect_action_->setEnabled(connected);
     start_action_->setEnabled(connected);
@@ -304,7 +302,6 @@ void MainWindow::on_connection_changed(bool connected, const QString& descriptio
     connection_label_->setText(description);
     const bool connecting = !connected && description.startsWith(QStringLiteral("正在连接"));
     if (connecting) {
-        connected_ = false;
         connect_action_->setEnabled(false);
         disconnect_action_->setEnabled(true);
         start_action_->setEnabled(false);

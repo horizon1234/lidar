@@ -1,312 +1,123 @@
-# 项目补充说明
+# YLJ5 项目工程说明
 
-本文把当前仓库从“方案文档”补到“可投中高级算法工程师岗位的项目骨架”。重点不是 UI，而是能回答算法面试中的六类问题：算法主链、数据资产、评测、工程化、演示闭环和中高级深度。当前仓库在保留 Python 参考实现的同时，已经补了一版 C++ 主链骨架，便于往中高级算法工程和工程化落地方向继续推进。
+本文只描述当前工程实现。`docs/0-21` 和 `cpp/examples` 是知识学习材料，不作为设备行为
+或厂家参数的证据。
 
-当前仓库有两条彼此独立但共享核心算法的数据路径：
+## 1. 项目目标
 
-1. 批处理/公开数据路径：通用 simulation、Cloudnet hybrid、Open-Meteo、评测和静态 Demo。
-2. 实时设备路径：面向 `YLJ5 / AGHJ-I-LIDAR(MPL)` 的 TCP JSONL 仿真服务、主控客户端和闭环组件。
+项目唯一目标是逐步逼近 `YLJ5 / AGHJ-I-LIDAR(MPL)` 实机。现阶段交付物包括：
 
-第二条路径只在公开证据范围内还原具体设备。PRF、脉冲能量、接收增益和厂家私有协议
-仍属于假设或未知，详见 [YLJ5 仿真保真说明](ylj5_fidelity.md)。
+- 满足公开规格边界的 Linux C++ 仿真设备；
+- 双望远镜、平行/垂直偏振四通道正演；
+- 水平、垂直、锥形观测和按采集耗时播放；
+- TCP JSONL 仿真层协议和可校验控制命令；
+- Linux Qt 图形客户端及子线程实时处理链；
+- 对缺少实机证据的参数、产品和协议做显式降级。
 
-## 1. 算法主链
+“100% 还原”必须以厂商协议、原始帧、标定报告和上位机对照结果验收。当前不能宣称
+厂商线协议或厂家 L1/L2 算法已经还原。
 
-当前最小可运行算法链已经落地在代码里，对应关系如下：
+## 2. 架构
 
-| 模块 | 代码位置 | 当前能力 |
-| --- | --- | --- |
-| 回波模拟 | `lidar_core/simulation/scene.py` | 生成固定点 stare 和水平 PPI 扫描，输出原始回波、真值 backscatter/extinction、真值 PM 和热点 mask |
-| L0 -> L1 预处理 | `lidar_core/preprocessing/pipeline.py` | 背景扣除、发射能量归一化、overlap 校正、RCS 风格的距离平方补偿、SNR 和 QC flag |
-| Fernald 近似反演 | `lidar_core/retrieval/fernald.py` | 基于参考区和固定 lidar ratio 的后向积分，恢复 extinction 与 aerosol backscatter |
-| 湿度修正 | `lidar_core/calibration/humidity.py` | 用吸湿增长因子把湿态 extinction 拉回 dry extinction |
-| PM2.5 / PM10 标定 | `lidar_core/calibration/pm.py` | 基于对齐后的地面 PM 与气象观测做线性标定，并在 bin 级别加入局部异常增强 |
-| 热点检测 | `lidar_core/detection/hotspots.py` | 绝对 PM 阈值 + 扫描内相对异常联合判定，之后做连通域、面积、质心和等级计算 |
-| ENU 坐标映射 | `lidar_core/geometry/enu.py` | 把极坐标 range/azimuth/elevation 映射到 ENU 三维坐标 |
-| 端到端编排 | `lidar_core/pipeline.py` | 串联仿真、预处理、反演、标定、热点、评测、消融、敏感性和 Demo 输出 |
-
-当前默认配置下，端到端输出包含：
-
-- L0：模拟原始回波与元数据
-- L1：背景扣除后的信号、attenuated backscatter、SNR、QC flag
-- L2：extinction、dry extinction、PM2.5、PM10、热点事件、ENU 三维位置
-- Demo：时间高度图、PPI 热点、质量控制指标、告警和分析表
-
-## 2. 数据资产
-
-### 2.1 可控模拟数据
-
-模拟数据由 `scripts/build_demo_assets.py` 触发生成，输出到以下目录：
-
-- `data/raw/simulated_demo_campaign.json`
-- `data/l1/demo_preprocessed.json`
-- `data/l2/demo_results.json`
-
-默认数据规模：
-
-- 站点：1 个固定站点，北京示例站
-- 时间步：18 个时间步
-- 采样间隔：20 分钟
-- 扫描模式：每个时间步 1 条 stare + 12 条 PPI 射线
-- 距离 bin：30 个，分辨率 50 m
-- 总 profile 数：234
-
-模拟场景包含：
-
-- 近地边界层背景气溶胶
-- 时间变化的高架污染层
-- 两个局部 plume 源
-- 湿度、温度、风速风向的同步变化
-- 可直接用来做热点真值评测的 `true_hotspot_mask`
-
-### 2.2 公开数据
-
-公开数据资产分成两类：
-
-1. 已落地到仓库的地面 PM + 气象样例
-2. 已登记到仓库的数据源清单
-
-对应文件：
-
-- `data/public/public_dataset_registry.json`
-- `data/public/README.md`
-- `scripts/fetch_public_ground_data.py`
-- `cpp/apps/fetch_public_ground_data.cpp`
-- `cpp/apps/fetch_cloudnet_public_sample.cpp`
-
-当前公开样例策略：
-
-- 用 Open-Meteo 抓取北京区域的小时级 PM2.5、PM10、温度、湿度、风速、风向
-- 把结果写成一份原始 JSON 和一份对齐后的 CSV
-- 作为地面观测对齐样例和 Demo 数据资产
-
-对公开激光雷达数据，当前仓库先登记入口而不是内置大文件：
-
-- Cloudnet 数据门户，可下载公开的地基遥感廓线数据和可视化结果
-- 该类数据适合用来替换 `lidar_core/simulation/scene.py` 的模拟输入，验证真实 backscatter / extinction 处理链
-
-### 2.3 对齐方式
-
-当前对齐粒度是“按时间戳对齐的地面 PM 与气象”。后续接真实 LiDAR 数据时建议按下面方式扩展：
-
-1. LiDAR 使用 profile 时间戳或 scan 时间戳为主键
-2. 地面 PM 和气象按最近邻或固定窗口聚合到同一时间栅格
-3. 若真实设备时钟偏移明显，先做时间漂移校正
-4. 若存在多个地面站，保留站点 ID 与距离权重
-
-### 2.4 训练集 / 验证集 / 测试集划分
-
-当前离线基线采用交错时间切分：
-
-- 训练集：时间序列中 `index % 5` 落在 `0, 1, 2` 的样本
-- 验证集：时间序列中 `index % 5 == 3` 的样本
-- 测试集：时间序列中 `index % 5 == 4` 的样本
-- 离线指标：使用验证集和测试集合并后的 holdout 结果，避免小样本下单一子集方差过低
-
-这种切分比简单地切最后几段更合理，因为当前数据是带周期变化的时序样本。如果完全按尾段切分，容易得到方差过小的测试集，导致 $R^2$ 被严重低估。
-
-### 2.5 事件定义
-
-当前热点事件定义为：
-
-1. 单元级别满足“绝对 PM 阈值”或“扫描内相对异常阈值”
-2. 相邻单元形成连通域
-3. 连通域大小达到 `min_cells`
-4. 输出热点质心、峰值、面积和等级
-
-这套定义更接近真实业务，因为热点在很多场景下不是绝对浓度极高，而是相对局部背景显著抬升。
-
-## 3. 评测指标
-
-当前仓库已经内置以下评测：
-
-- PM2.5：MAE、RMSE、$R^2$
-- PM10：MAE、RMSE、$R^2$
-- 热点检测：Precision、Recall、F1
-- 反演稳定性：不同 lidar ratio 下 PM RMSE 的跨度
-- 工程性能：平均单 profile 时延、profiles/s 吞吐量
-
-默认固定随机种子下，当前离线 baseline 为：
-
-| 指标 | 数值 |
-| --- | --- |
-| PM2.5 RMSE | 2.555 |
-| PM2.5 $R^2$ | 0.819 |
-| PM10 RMSE | 2.863 |
-| PM10 $R^2$ | 0.892 |
-| Hotspot Precision | 0.628 |
-| Hotspot Recall | 0.754 |
-| Hotspot F1 | 0.685 |
-| 平均单 profile 时延 | 0.122 ms |
-| 吞吐量 | 4721 profiles/s |
-
-这些数字是 Demo baseline，不应直接包装成真实设备线上指标。简历上应写成“模拟和样例数据上的离线基线”，后续再用真实 LiDAR 数据替换。
-
-## 4. 工程化
-
-### 4.1 当前目录落地情况
-
-| 目标 | 当前实现 |
-| --- | --- |
-| C++ 主链 | `cpp/` + `CMakeLists.txt`，覆盖 simulation 主链、Cloudnet hybrid 本地读取、batch、demo、live HTTP API 和 `--once` 摘要输出 |
-| YLJ5 实时设备 | `cpp/server/`，覆盖公开规格校验、5334 距离门、双望远镜四通道、惰性周期生成和控制状态机 |
-| 实时帧协议 | `cpp/protocol/`，覆盖 status/telemetry/lidar_raw/camera/lidar_product/command/command_result/alarm JSONL 帧 |
-| 主控客户端 | `cpp/client/`，Linux Qt GUI；专用 `QThread` 覆盖网络、协议、设备状态、扫描完整性和 L0-L2 处理，主线程只渲染快照 |
-| 算法模块 | `lidar_core/` |
-| 配置 | `configs/DefaultPipeline.json` |
-| API | `services/api/server.py` + `cpp/apps/api_server.cpp` |
-| 任务调度 / 批处理 | `services/workers/run_batch.py` |
-| 可复现实验脚本 | `scripts/build_demo_assets.py`、`scripts/fetch_public_ground_data.py`、`cpp/apps/fetch_public_ground_data.cpp`、`cpp/apps/fetch_cloudnet_public_sample.cpp` |
-| 测试 | Python `tests/` + C++ `cpp/tests/`，包含端到端、闭环、播放时序、客户端遥测、四通道处理/PM 门控和 YLJ5 设备测试 |
-| 公开数据资产说明 | `data/public/README.md` |
-| 实验记录模板 | `experiments/experiment_log_template.md` |
-
-### 4.2 当前工程闭环
-
-当前已经具备一个最小闭环：
-
-1. 生成模拟 LiDAR campaign
-2. 运行 Python 或 C++ 的 L0 -> L2 处理链
-3. 输出评测指标、漂移监控和热点事件
-4. 生成静态 Demo 页面
-5. 通过 Python 或 C++ 的 HTTP API 读取摘要结果，也可以用 C++ `--once` 输出摘要 JSON
-6. 用单元测试验证 Python 基线结构，并保留 C++ 断言测试入口
-
-实时设备路径额外具备：
-
-1. 服务端发布设备能力、合成遥测、四通道原始射线、相机能力和快速产品；
-2. 客户端发送启停、暂停、状态查询和扫描配置命令；
-3. 服务端先校验完整配置副本，再返回结构化 `command_result`；
-4. 逐周期生成和逐帧发送避免缓存 180 个全规格周期；
-5. 全规格烟雾测试跨两个周期覆盖 0 度水平、5 度锥形和 90 度垂直观测；每周期
-   181 条射线，每条 5334 bins 和四物理通道。
-
-### 4.3 当前仍缺的工程项
-
-如果要进一步变成真实交付项目，下一步应该补：
-
-- 地面站多源对齐服务
-- 持久化数据库和实验追踪
-- 流式处理或消息总线
-- 更完整的配置分层
-- CI、代码格式化和类型检查
-- 真正的历史回放和用户权限
-- YLJ5 厂商私有协议适配、实机原始帧回放和光机标定文件
-
-## 5. Demo 闭环
-
-当前 Demo 已经定义并生成以下页面：
-
-- 实时总览：时间高度图 + 关键指标卡片
-- PPI 与热点：二维平面热点定位 + 事件表
-- 质量控制：SNR、处理时延、背景光、激光能量波动
-- 历史回放：数据切分、消融、敏感性、历史告警
-
-生成方式：
-
-```powershell
-python scripts/build_demo_assets.py
+```text
+Ylj5DeviceSpec
+  -> SimDevice 单周期正演
+  -> Frame / WireFormat JSONL
+  -> POSIX TcpServer
+  -> QTcpSocket（工作线程）
+  -> ScanCycleMonitor + DeviceStatusModel
+  -> 四通道预处理 -> Fernald/Klett -> 湿度修正 -> ENU
+  -> PM 标定门控 -> 分层热点检测
+  -> DisplaySnapshot -> Qt GUI
 ```
 
-或使用 C++ 入口：
+主要边界：
 
-```powershell
-build/lidar_build_demo_assets --config configs/DefaultPipeline.json --output-root .
-```
+| 模块 | 职责 | 不负责 |
+|---|---|---|
+| `lidar_core` | 正演、L0-L2 数值处理、JSON | socket、GUI、厂家协议 |
+| `lidar_protocol` | 项目 JSONL 帧与数据结构转换 | 二进制厂商帧猜测 |
+| `lidar_server` | 设备状态、扫描调度、惰性生成、TCP 推流 | 客户端反演与显示 |
+| `lidar_client` | 收包、周期聚合、处理、Qt 显示 | 伪造缺失标定或实机字段 |
 
-输出文件：
+## 3. 数据层级
 
-- `web/demo_dashboard.html`
-- `data/l2/demo_results.json`
+### L0 原始观测
 
-API 摘要：
+`lidar_raw` 提供距离轴、指向角、采集时序、激光能量、背景计数、四接收通道、拼接主
+通道和退偏比。默认不带 `true_*` 字段。
 
-```powershell
-python services/api/server.py --once
-```
+### L1 质控信号
 
-对应的 C++ live API / 摘要输出：
+客户端对近、远场平行通道分别做尾端背景估计、相对增益和 overlap 修正、积分脉冲
+SNR 估计，再在交叉区估计比例并拼接。输出背景校正信号、距离平方校正信号、SNR 和 QC。
 
-```powershell
-build/lidar_api_server --config configs/DefaultPipeline.json --once
-build/lidar_api_server --config configs/DefaultPipeline.json --host 127.0.0.1 --port 8765
-```
+### L2 光学产品
 
-Cloudnet hybrid 在 C++ 端的调用方式与默认链相同，只需要换配置：
+客户端补充分子参考场，使用固定激光雷达比和远端参考执行 Fernald/Klett 弹性反演，
+随后做湿度修正和 ENU 投影。激光雷达比、参考区和分子场误差都会进入系统误差。
 
-```powershell
-build/lidar_fetch_cloudnet_public_sample --config configs/CloudnetHybridPipeline.json --output-root .
-build/lidar_run_batch --config configs/CloudnetHybridPipeline.json --output .
-build/lidar_api_server --config configs/CloudnetHybridPipeline.json --once
-build/lidar_api_server --config configs/CloudnetHybridPipeline.json --host 127.0.0.1 --port 8765
-```
+### PM 和热点
 
-北京地面 PM / 气象公开样例现在也可以直接用 C++ 入口抓取：
+PM 不是设备原始量。只有加载目标站点共址标定后，客户端才输出 PM2.5、PM10 和热点。
+未标定时相应数组为空，GUI 不显示定量浓度告警。
 
-```powershell
-build/lidar_fetch_public_ground_data --output-root .
-```
+## 4. 设备行为
 
-当前这条 C++ 真实数据路径依赖 NetCDF 库；在 Windows C++ 构建下，既可以显式运行 `lidar_fetch_cloudnet_public_sample` 先落地 `data/public/cloudnet/` 里的样例，也可以让 loader 在缺少 `.nc` 或对齐后的 Open-Meteo JSON 时自动补齐。Python 抓取脚本仍然保留作参考和兜底。
+默认每个周期生成 181 条射线：1 条 90 度垂直观测和 180 条固定仰角方位射线。方位
+层在 0 度水平扫描和 5 度锥扫之间逐周期轮换。每条射线 5334 bins、四物理通道。
 
-对 Cloudnet hybrid 真实样例，当前已把热点阈值调到更保守的配置：`pm25_threshold_ugm3 = 80.0`、`scan_relative_pm25_threshold_ugm3 = 8.0`、`min_cells = 6`。这组参数在当前 Bucharest 单日样例上把热点 F1 从 0.128 提升到 0.176，同时减少了事件级告警数量。
+服务端按如下边界工作：
 
-## 6. 中高级层面的深度
+- 初始化只校验规格，不生成整场数据；
+- 每次只生成当前周期，随后逐帧交给 TCP 层；
+- 暂停时保留当前周期位置，停止或断线时中止当前周期；
+- 每周期用 `heartbeat` 封口；
+- 连接切换时客户端清理未完成周期状态，已封口摘要读取后立即释放。
 
-当前仓库已经不是单纯“复现公式”，而是把几个中高级面试经常会问到的点提前落到了代码结构里：
+## 5. 证据管理
 
-### 6.1 不确定度与稳定性
+所有参数按三类维护：
 
-- 用不同 lidar ratio 做敏感性分析
-- 用 `retrieval_stability` 记录对结果的影响跨度
+| 等级 | 示例 | 使用规则 |
+|---|---|---|
+| 公开确认 | 型号、双望远镜、IP66、同步相机 | 可作为能力元数据 |
+| 采购边界 | 532 nm、3.75 m、20 km、扫描条数 | 用于配置校验，不冒充厂家标称值 |
+| 仿真假设 | 5 kHz、0.02 mJ、overlap、5 度调度 | 必须标记待实机确认，可由标定文件替换 |
 
-### 6.2 消融实验
+私有帧头、命令字、状态寄存器、相机编码和厂家产品算法属于未知项。详细来源见
+[YLJ5 保真说明](ylj5_fidelity.md)。
 
-- `full-pipeline`
-- `without-humidity-correction`
+## 6. 质量控制
 
-下一步可以继续补：
+客户端当前关注：
 
-- 不做 overlap 校正
-- 不做局部热点增强
-- 不做相对异常判定
+- 距离轴、通道长度、角度和有限数校验；
+- 近远场拼接区是否有足够高 SNR 样本；
+- 分子参考是否来自标准大气回退；
+- 扫描周期是否缺帧、重复或被中断；
+- PM 标定是否存在且有稳定 ID；
+- 单射线处理时延和周期拒绝帧数。
 
-### 6.3 模型漂移监控
+协议与产品都保留 provenance / calibration / QC 字段，避免把合成遥测、快速摘要或
+仿真真值误当实机定量结果。
 
-建议后续上线时记录：
+## 7. 当前验证
 
-- 每日 PM 标定系数漂移
-- 不同湿度区间下残差变化
-- 风速 / 风向条件变化下的误差偏移
-- 热点误报率随季节和工地状态变化的趋势
+默认构建只包含四项设备测试和三个教学算例。测试覆盖公开规格校验、0/5 度轮换、
+四通道 JSONL 往返、命令原子更新、播放时序、设备状态增量合并、周期状态释放、
+四通道拼接、标准大气回退和 PM 标定门控。
 
-### 6.4 线上校准策略
+不再维护 Cloudnet、Open-Meteo 抓取、离线批处理、HTTP API、静态 Dashboard、旧闭环
+联动组件及其数据资产。相关概念仍可在知识学习文档中阅读。
 
-建议把 PM 标定拆成两层：
+## 8. 实机接入准则
 
-1. 全局基础模型
-2. 站点级增量校准
+真实设备接入应新增独立适配器，把厂家数据转换为现有 `LidarProfile`，不要让厂家协议
+细节侵入处理和 GUI。每种固件至少需要：
 
-站点级模型可按周或按月滚动更新，但必须保留回滚能力和版本号。
-
-### 6.5 多源融合
-
-当前代码里已经给 PM 标定留出了多源扩展位，后续可以继续接：
-
-- 多地面站
-- 风场再分析数据
-- 道路 / 工地边界
-- 相机或视频的扬尘告警
-- 车载扫描轨迹
-
-### 6.6 失败案例分析
-
-后续必须单独建一个失败案例集，至少覆盖：
-
-- 雨雾天气
-- 背景光过强
-- 低空 overlap 失配
-- plume 非常贴地导致局部饱和
-- 地面站位置与 plume 不共址
-
-如果你把这部分补齐，面试官会更容易把你看成“能做系统闭环的算法工程师”，而不是只会写一个回归脚本的人。
+1. 原始输入样本和对应厂家上位机结果；
+2. 字段、单位、字节序、无效值和校验规则；
+3. 通道增益、overlap、距离零点和偏振标定；
+4. golden sample 字段级与数值级断言；
+5. 长时间丢包、断线、重连和故障码测试。

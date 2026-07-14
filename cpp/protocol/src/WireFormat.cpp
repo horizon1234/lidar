@@ -4,9 +4,6 @@
  */
 #include "lidar_protocol/Frame.hpp"
 
-#include <algorithm>
-#include <sstream>
-
 namespace lidar_protocol {
 
 // ---- FrameType 转换 ----
@@ -14,7 +11,6 @@ namespace lidar_protocol {
 std::string frame_type_to_string(FrameType type) {
     switch (type) {
     case FrameType::lidar_raw:  return "lidar_raw";
-    case FrameType::lidar_l1:   return "lidar_l1";
     case FrameType::ground_obs: return "ground_obs";
     case FrameType::status:     return "status";
     case FrameType::telemetry:  return "telemetry";
@@ -22,8 +18,6 @@ std::string frame_type_to_string(FrameType type) {
     case FrameType::lidar_product: return "lidar_product";
     case FrameType::command:    return "command";
     case FrameType::command_result: return "command_result";
-    case FrameType::hotspots:   return "hotspots";
-    case FrameType::summary:    return "summary";
     case FrameType::alarm:      return "alarm";
     case FrameType::heartbeat:  return "heartbeat";
     default:                    return "unknown";
@@ -32,7 +26,6 @@ std::string frame_type_to_string(FrameType type) {
 
 FrameType string_to_frame_type(const std::string& text) {
     if (text == "lidar_raw")  return FrameType::lidar_raw;
-    if (text == "lidar_l1")   return FrameType::lidar_l1;
     if (text == "ground_obs") return FrameType::ground_obs;
     if (text == "status")     return FrameType::status;
     if (text == "telemetry")  return FrameType::telemetry;
@@ -40,8 +33,6 @@ FrameType string_to_frame_type(const std::string& text) {
     if (text == "lidar_product") return FrameType::lidar_product;
     if (text == "command")    return FrameType::command;
     if (text == "command_result") return FrameType::command_result;
-    if (text == "hotspots")   return FrameType::hotspots;
-    if (text == "summary")    return FrameType::summary;
     if (text == "alarm")      return FrameType::alarm;
     if (text == "heartbeat")  return FrameType::heartbeat;
     return FrameType::unknown;
@@ -101,38 +92,6 @@ Frame parse_frame(const std::string& line) {
     return frame;
 }
 
-std::vector<Frame> parse_frames_from_buffer(const std::string& buffer, std::size_t& consumed) {
-    std::vector<Frame> frames;
-    consumed = 0;
-
-    std::size_t start = 0;
-    while (true) {
-        std::size_t newline_pos = buffer.find('\n', start);
-        if (newline_pos == std::string::npos) {
-            break; // 不完整的尾行，等待更多数据
-        }
-
-        std::string line = buffer.substr(start, newline_pos - start);
-        consumed = newline_pos + 1;
-
-        // 跳过空行
-        if (line.empty() || std::all_of(line.begin(), line.end(), [](char c) { return std::isspace(static_cast<unsigned char>(c)); })) {
-            start = newline_pos + 1;
-            continue;
-        }
-
-        try {
-            frames.push_back(parse_frame(line));
-        } catch (const std::exception&) {
-            // 解析失败的行跳过，不中断流
-        }
-
-        start = newline_pos + 1;
-    }
-
-    return frames;
-}
-
 // ---- LidarProfile ↔ JSON 载荷 ----
 
 namespace {
@@ -185,7 +144,7 @@ lidar_core::Json channel_to_json(const lidar_core::LidarChannel& channel) {
 }
 
 lidar_core::LidarChannel json_to_channel(const lidar_core::Json& json) {
-    // 所有字段按可选字段读取，允许旧客户端继续解析不含四通道的历史帧。
+    // 字段按可选项读取，便于后续用实机抓包逐步补齐尚未知的厂商字段。
     lidar_core::LidarChannel channel;
     auto get_string = [&](const char* key) -> std::string {
         return json.contains(key) && json.at(key).is_string()

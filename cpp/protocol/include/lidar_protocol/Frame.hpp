@@ -13,8 +13,6 @@
 #pragma once
 
 #include <string>
-#include <vector>
-
 #include "lidar_core/LidarCore.hpp"
 
 namespace lidar_protocol {
@@ -26,7 +24,6 @@ namespace lidar_protocol {
  */
 enum class FrameType {
     lidar_raw,      ///< L0 原始 LiDAR 射线数据（仿真设备 → 客户端）
-    lidar_l1,       ///< L1 预处理结果（可选中转）
     ground_obs,     ///< 地面观测数据
     status,         ///< 设备/系统状态（心跳、温度等）
     telemetry,      ///< 设备运行遥测
@@ -34,8 +31,6 @@ enum class FrameType {
     lidar_product,  ///< 未标定在线派生产品
     command,        ///< 控制命令（扫描模式切换、参数调整等）
     command_result, ///< 控制命令结构化执行结果
-    hotspots,       ///< 检测到的热点列表
-    summary,        ///< 周期性汇总摘要
     alarm,          ///< 告警事件
     heartbeat,      ///< 心跳帧
     unknown,        ///< 无法识别的帧类型
@@ -50,13 +45,6 @@ std::string frame_type_to_string(FrameType type);
  * @brief 将字符串转为帧类型枚举，无法匹配时返回 unknown。
  */
 FrameType string_to_frame_type(const std::string& text);
-
-/**
- * @brief 将帧类型字符串转为帧类型枚举（等价于 string_to_frame_type）。
- */
-inline FrameType parse_frame_type(const std::string& text) {
-    return string_to_frame_type(text);
-}
 
 /**
  * @brief 一个完整的传输帧。
@@ -99,24 +87,12 @@ Frame make_frame(FrameType type, const std::string& timestamp, lidar_core::Json 
  */
 Frame parse_frame(const std::string& line);
 
-/**
- * @brief 将一段多行文本按 '\n' 切分为多帧。
- *
- * 遇到解析失败的行会跳过（不抛异常），返回成功解析的帧列表。
- * 用于从 TCP 流缓冲区中批量提取帧。
- *
- * @param buffer 包含零到多行 JSON 的文本（可能含不完整尾行）
- * @param consumed 返回被成功消费的字节数（即完整行的总长度）
- * @return 成功解析出的帧列表
- */
-std::vector<Frame> parse_frames_from_buffer(const std::string& buffer, std::size_t& consumed);
-
 // ---- 高层序列化辅助：LidarProfile → JSON 帧 payload ----
 
 /**
  * @brief 将一条 LidarProfile 转为 JSON 载荷对象。
  *
- * 始终包含角度、距离轴、兼容主通道、四物理通道、退偏比和气象量；分子场与仿真
+ * 始终包含角度、距离轴、近远场拼接主通道、四物理通道、退偏比和气象量；分子场与仿真
  * 真值由 include_truth_fields 控制。实时设备默认关闭真值，避免误当实测数据并降低带宽。
  *
  * @param profile 待序列化的原始射线。

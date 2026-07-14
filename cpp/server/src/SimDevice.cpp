@@ -21,11 +21,7 @@ namespace {
 
 std::tm safe_localtime(std::time_t value) {
     std::tm result{};
-#ifdef _WIN32
-    localtime_s(&result, &value);
-#else
     localtime_r(&value, &result);
-#endif
     return result;
 }
 
@@ -178,7 +174,6 @@ lidar_core::PipelineConfig SimDevice::pipeline_config_for_cycle(
     // 设备层区分“有公开证据的硬件边界”和“等待实机标定的正演参数”；核心正演 API
     // 仍使用扁平 SimulationConfig，因此只在这一处完成映射，避免其他模块重复解释规格。
     lidar_core::PipelineConfig pipeline;
-    pipeline.source_mode = "simulation";
     pipeline.site.name = config.site.site_name;
     pipeline.site.site_id = config.site.site_id;
     pipeline.site.latitude_deg = config.site.latitude_deg;
@@ -186,9 +181,7 @@ lidar_core::PipelineConfig SimDevice::pipeline_config_for_cycle(
     pipeline.site.altitude_m = config.site.altitude_m;
 
     auto& simulation = pipeline.simulation;
-    simulation.instrument_preset = "ylj5_aghj_i_lidar_mpl_public_spec";
     simulation.application_mode = config.scene.application_mode;
-    simulation.vendor_profile = "ylj5_jsonl_emulator";
     simulation.seed = config.scene.seed;
     simulation.time_steps = 1;
     simulation.minutes_per_step = config.minutes_per_cycle;
@@ -215,8 +208,6 @@ lidar_core::PipelineConfig SimDevice::pipeline_config_for_cycle(
     simulation.pulse_energy_jitter = config.scene.pulse_energy_jitter;
     simulation.background_counts_mean = config.scene.background_counts_mean;
     simulation.background_counts_jitter = config.scene.background_counts_jitter;
-    simulation.full_overlap_m = config.scene.far_full_overlap_m;
-    simulation.min_overlap = config.scene.far_min_overlap;
     simulation.detector_dark_counts = config.scene.detector_dark_counts;
     simulation.read_noise_counts = config.scene.read_noise_counts;
     simulation.adc_saturation_counts = config.scene.adc_saturation_counts;
@@ -224,7 +215,6 @@ lidar_core::PipelineConfig SimDevice::pipeline_config_for_cycle(
     simulation.afterpulsing_ratio = config.scene.afterpulsing_ratio;
     simulation.solar_background_scale = config.scene.solar_background_scale;
     simulation.vehicle_speed_ms = config.scene.vehicle_speed_ms;
-    simulation.enable_ylj5_receiver_channels = true;
     simulation.near_telescope_aperture_mm = config.hardware.near_telescope_aperture_mm;
     simulation.far_telescope_aperture_mm = config.hardware.far_telescope_aperture_mm;
     simulation.near_channel_gain = config.scene.near_channel_gain;
@@ -233,9 +223,6 @@ lidar_core::PipelineConfig SimDevice::pipeline_config_for_cycle(
     simulation.far_min_overlap = config.scene.far_min_overlap;
     simulation.channel_stitch_range_m = config.scene.channel_stitch_range_m;
 
-    pipeline.retrieval.aerosol_lidar_ratio_sr = config.scene.aerosol_lidar_ratio_sr;
-    pipeline.retrieval.reference_aerosol_backscatter = 0.0004;
-    pipeline.evaluation.sensitivity_lidar_ratios = {config.scene.aerosol_lidar_ratio_sr};
     return pipeline;
 }
 
@@ -496,16 +483,6 @@ int SimDevice::total_steps() const {
     return initialized_ ? config_.campaign_cycles : 0;
 }
 
-int SimDevice::minutes_per_step() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return config_.minutes_per_cycle;
-}
-
-int SimDevice::inter_frame_delay_ms() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return config_.stream.inter_frame_delay_ms;
-}
-
 lidar_core::SiteInfo SimDevice::site_info() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return lidar_core::SiteInfo{
@@ -530,24 +507,6 @@ bool SimDevice::is_streaming() const {
 DeviceRunState SimDevice::run_state() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return run_state_;
-}
-
-lidar_protocol::Frame SimDevice::ground_frame(int step_index) const {
-    lidar_core::GroundMeasurement ground;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        ground = last_ground_measurement_;
-        if (ground.site_id.empty()) {
-            ground.site_id = config_.site.site_id;
-        }
-    }
-    if (ground.timestamp.empty()) {
-        ground.timestamp = timestamp_for_step(step_index);
-    }
-    return lidar_protocol::make_frame(
-        lidar_protocol::FrameType::ground_obs,
-        ground.timestamp,
-        lidar_protocol::ground_to_json(ground));
 }
 
 lidar_protocol::Frame SimDevice::status_frame(int step_index) const {

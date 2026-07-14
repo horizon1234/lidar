@@ -34,7 +34,6 @@ struct ProcessorConfig {
     double glue_start_range_m = 75.0;      ///< 近远场开始交叉拼接的距离（米）。
     double glue_stop_range_m = 300.0;      ///< 近远场结束交叉拼接的距离（米）。
     double minimum_overlap = 0.02;         ///< overlap 除法保护下限。
-    int expected_ppi_azimuths = 180;       ///< 公开规格下单层扫描的预期方位射线数。
 };
 
 /** @brief 一个扫描周期完成后的不可变数据快照。 */
@@ -79,18 +78,6 @@ public:
     /** @brief 原子替换后续射线使用的 PM 标定模型。 */
     void set_pm_calibration(const PmCalibrationModel& calibration);
 
-    /** @brief 返回已成功处理的射线总数。 */
-    int total_processed() const { return total_processed_; }
-
-    /** @brief 返回被质量门控拒绝的射线总数。 */
-    int total_rejected() const { return total_rejected_; }
-
-    /** @brief 返回已完成扫描周期数。 */
-    int total_steps_completed() const { return total_steps_completed_; }
-
-    /** @brief 返回最近状态帧提供的站点信息。 */
-    const lidar_core::SiteInfo& site_info() const { return site_info_; }
-
 private:
     /** @brief 执行一条真实设备射线的完整 L0-L2 处理链。 */
     lidar_core::ProcessedProfile process_device_profile(
@@ -108,9 +95,6 @@ private:
     int current_raw_count_ = 0;             ///< 当前周期收到的原始射线数。
     int current_rejected_count_ = 0;        ///< 当前周期被拒绝的射线数。
     lidar_core::SiteInfo site_info_;        ///< 状态帧维护的站点和海拔信息。
-    int total_processed_ = 0;               ///< 进程启动后成功处理的射线累计数。
-    int total_rejected_ = 0;                ///< 进程启动后拒绝的射线累计数。
-    int total_steps_completed_ = 0;         ///< 进程启动后完成的周期累计数。
 };
 
 } // namespace lidar_client

@@ -45,14 +45,15 @@ void ScanCycleMonitor::observe_frame(const lidar_protocol::Frame& frame) {
     }
 }
 
-ScanCycleSummary ScanCycleMonitor::summary_for_timestamp(const std::string& timestamp) const {
+ScanCycleSummary ScanCycleMonitor::take_summary_for_timestamp(const std::string& timestamp) {
     ScanCycleSummary summary;
-    for (const auto& [cycle_id, state] : cycles_by_id_) {
-        if (state.timestamp != timestamp) {
+    for (auto iterator = cycles_by_id_.begin(); iterator != cycles_by_id_.end(); ++iterator) {
+        if (iterator->second.timestamp != timestamp) {
             continue;
         }
+        const CycleState& state = iterator->second;
 
-        summary.scan_cycle_id = cycle_id;
+        summary.scan_cycle_id = iterator->first;
         summary.timestamp = state.timestamp;
         summary.expected_rays = state.expected_rays;
         summary.received_rays = static_cast<int>(state.received_indices.size());
@@ -66,27 +67,14 @@ ScanCycleSummary ScanCycleMonitor::summary_for_timestamp(const std::string& time
             && summary.received_rays == summary.expected_rays
             && summary.duplicate_rays == 0
             && summary.missing_ray_indices.empty();
+        cycles_by_id_.erase(iterator);
         return summary;
     }
     return summary;
 }
 
-lidar_core::Json ScanCycleMonitor::summary_to_json(const ScanCycleSummary& summary) const {
-    lidar_core::Json::Array missing;
-    missing.reserve(summary.missing_ray_indices.size());
-    for (int index : summary.missing_ray_indices) {
-        missing.emplace_back(index);
-    }
-
-    return lidar_core::Json::Object{
-        {"scan_cycle_id", summary.scan_cycle_id},
-        {"timestamp", summary.timestamp},
-        {"expected_rays", summary.expected_rays},
-        {"received_rays", summary.received_rays},
-        {"duplicate_rays", summary.duplicate_rays},
-        {"missing_ray_indices", lidar_core::Json(std::move(missing))},
-        {"complete", summary.complete},
-    };
+void ScanCycleMonitor::reset() {
+    cycles_by_id_.clear();
 }
 
 } // namespace lidar_client

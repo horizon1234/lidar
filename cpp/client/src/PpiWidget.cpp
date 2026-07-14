@@ -15,11 +15,6 @@ PpiWidget::PpiWidget(QWidget* parent)
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 }
 
-void PpiWidget::set_title(const QString& title) {
-    title_ = title;
-    update();
-}
-
 void PpiWidget::set_snapshot(const DisplaySnapshot& snapshot) {
     canvas_ = snapshot.ppi_image;
     title_ = snapshot.ppi_title;

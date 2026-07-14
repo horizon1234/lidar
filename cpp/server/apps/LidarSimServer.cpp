@@ -92,7 +92,7 @@ int main(int argc, char* argv[]) {
 
     lidar_server::SimDeviceConfig device_config;
     device_config.stream.playback_time_scale = playback_time_scale;
-    // 构造时立即执行公开规格校验并生成第一个周期；若配置非法 total_steps 为 0。
+    // 构造时只执行公开规格校验；若配置非法 total_steps 为 0。
     lidar_server::SimDevice device(device_config);
     if (device.total_steps() == 0) {
         std::cerr << "[server] YLJ5 emulator configuration failed validation.\n";

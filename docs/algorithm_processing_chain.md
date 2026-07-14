@@ -31,11 +31,11 @@ GUI 线程只接收 `shared_ptr<const StepResult>`、`shared_ptr<const DisplaySn
 每条 `lidar_raw` 进入处理链前检查：
 
 - 距离轴至少 8 个 bin，严格递增且数值有限；
-- 兼容主通道 `raw_counts` 和 `overlap` 与距离轴等长；
+- 近远场拼接主通道 `raw_counts` 和 `overlap` 与距离轴等长；
 - 方位角位于 `[0, 360)`，仰角位于 `[0, 180]`；
 - 每条物理接收通道的计数和 overlap 与距离轴等长。
 
-旧设备适配器若完全缺失主通道 overlap，会临时填充 1.0 并添加
+未来实机适配器若完全缺失主通道 overlap，会临时填充 1.0 并添加
 `main-channel-overlap-assumed-unity`；非空但尺寸错误的数据会被拒绝。结构或数值不合法的
 帧不会进入反演，周期结果记录 `malformed-or-unprocessable-lidar-frame`。
 
@@ -145,7 +145,8 @@ PM10  = max(0, intercept10 + slope10 * dry_extinction)
 `heartbeat` 或时间戳变化触发周期封口。`StepResult` 汇总有效/拒绝射线数、PPI/垂直
 射线数、仰角层数、平均处理时延、标定 ID 和去重后的 QC。`ScanCycleMonitor` 根据
 `scan_cycle_id`、`ray_index`、`rays_in_cycle` 识别重复和缺失射线；不完整周期添加
-`scan-cycle-incomplete`。
+`scan-cycle-incomplete`。周期摘要交付后立即释放缓存；重新连接时清空未完成周期，避免
+循环扫描和断线重连造成状态长期增长或误报重复帧。
 
 回归测试 `TestClientFrameProcessor.cpp` 固定验证以下边界：
 

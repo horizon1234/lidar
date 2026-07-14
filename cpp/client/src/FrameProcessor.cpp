@@ -328,10 +328,8 @@ void FrameProcessor::handle_frame(const lidar_protocol::Frame& frame) {
             auto processed = process_device_profile(frame, std::move(profile), profile_qc);
             append_unique(current_qc_flags_, profile_qc);
             current_processed_.push_back(std::move(processed));
-            ++total_processed_;
         } catch (const std::exception&) {
             ++current_rejected_count_;
-            ++total_rejected_;
             append_unique(current_qc_flags_, {"malformed-or-unprocessable-lidar-frame"});
         }
         break;
@@ -409,8 +407,6 @@ void FrameProcessor::finalize_step() {
     current_qc_flags_.clear();
     current_raw_count_ = 0;
     current_rejected_count_ = 0;
-    ++total_steps_completed_;
-
     if (on_step_complete_) {
         on_step_complete_(std::move(result));
     }

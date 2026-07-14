@@ -112,7 +112,6 @@ private:
     QLabel* pointing_label_ = nullptr;         ///< 当前云台方位、仰角和调度层摘要。
     QLabel* calibration_label_ = nullptr;      ///< PM 标定批次和有效性摘要。
     QLabel* transport_label_ = nullptr;        ///< TCP 接收帧、错误和流量摘要。
-    bool connected_ = false;                   ///< GUI 最近收到的网络连接状态。
     quint64 completed_steps_ = 0;              ///< GUI 已渲染的完整扫描周期数。
 };
 

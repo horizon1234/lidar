@@ -1,7 +1,4 @@
-// Public API implementation fragment: realtime processing step wrappers.
-// ============================================================================
-// 单步处理 API —— 供实时客户端逐帧处理使用
-// ============================================================================
+// YLJ5 正演与实时处理公共 API 的实现包装。
 
 PreprocessResult BackgroundPreprocessStep::process(const LidarProfile& profile) const {
     return preprocess_profile(profile);
@@ -18,8 +15,7 @@ std::pair<std::vector<double>, std::vector<double>> FernaldInversionStep::proces
         profile,
         attenuated_backscatter,
         config_.aerosol_lidar_ratio_sr,
-        config_.reference_aerosol_backscatter
-    );
+        config_.reference_aerosol_backscatter);
 }
 
 HumidityCorrectionStep::HumidityCorrectionStep(HumidityConfig config)
@@ -33,121 +29,33 @@ std::vector<double> HumidityCorrectionStep::process(
         extinction,
         relative_humidity,
         config_.dry_reference_rh,
-        config_.hygroscopicity
-    );
+        config_.hygroscopicity);
 }
 
-std::vector<std::vector<double>> CoordinateProjectionStep::process(const LidarProfile& profile) const {
+std::vector<std::vector<double>> CoordinateProjectionStep::process(
+    const LidarProfile& profile) const {
     return profile_bins_to_enu(profile);
-}
-
-HotspotDetectionStep::HotspotDetectionStep(HotspotConfig config)
-    : config_(std::move(config)) {
-}
-
-std::vector<Hotspot> HotspotDetectionStep::process(const std::vector<ProcessedProfile>& ppi_profiles) const {
-    return detect_hotspots_from_processed(ppi_profiles, config_);
-}
-
-SingleProfileProcessingChain::SingleProfileProcessingChain(RetrievalConfig retrieval, HumidityConfig humidity)
-    : inversion_(std::move(retrieval)),
-      humidity_(std::move(humidity)) {
-}
-
-ProcessedProfile SingleProfileProcessingChain::process(const LidarProfile& profile, bool disable_humidity) const {
-    auto started_at = std::chrono::steady_clock::now();
-    PreprocessResult preprocessed = preprocess_.process(profile);
-    auto inversion = inversion_.process(profile, preprocessed.attenuated_backscatter);
-    std::vector<double> dry_extinction = disable_humidity
-        ? inversion.first
-        : humidity_.process(inversion.first, profile.relative_humidity);
-
-    // PM 质量浓度不是单条弹性回波可以独立确定的物理量。这里保持为空，只有批处理
-    // 标定链或实时客户端加载站点标定模型后才允许填充，避免固定经验倍数冒充实测 PM。
-    std::vector<double> pm25;
-    std::vector<double> pm10;
-
-    auto ended_at = std::chrono::steady_clock::now();
-    return ProcessedProfile{
-        profile,
-        preprocessed.l1_signal,
-        preprocessed.attenuated_backscatter,
-        preprocessed.snr,
-        inversion.first,
-        dry_extinction,
-        std::move(pm25),
-        std::move(pm10),
-        projection_.process(profile),
-        preprocessed.qc_flags,
-        std::chrono::duration<double, std::milli>(ended_at - started_at).count(),
-    };
-}
-
-ProcessedProfile process_single_profile(
-    const LidarProfile& profile,
-    const RetrievalConfig& retrieval,
-    const HumidityConfig& humidity
-) {
-    return SingleProfileProcessingChain(retrieval, humidity).process(profile);
 }
 
 std::vector<Hotspot> detect_hotspots_from_processed(
     const std::vector<ProcessedProfile>& ppi_profiles,
-    const HotspotConfig& hotspot_cfg
-) {
-    // detect_hotspots 接受 ProcessedProfile* 指针列表
-    std::vector<ProcessedProfile*> ptrs;
-    ptrs.reserve(ppi_profiles.size());
-    for (const auto& p : ppi_profiles) {
-        ptrs.push_back(const_cast<ProcessedProfile*>(&p));
-    }
-
-    DetectionResult detection = detect_hotspots(
-        ptrs,
-        hotspot_cfg.pm25_threshold_ugm3,
-        hotspot_cfg.scan_relative_pm25_threshold_ugm3,
-        hotspot_cfg.scan_relative_dry_ext_threshold,
-        hotspot_cfg.min_cells
-    );
-    return detection.hotspots;
-}
-
-std::vector<GroundMeasurement> extract_ground_measurements(const Json& results) {
-    std::vector<GroundMeasurement> output;
-    if (results.contains("source") && results.at("source").contains("ground_measurements")) {
-        const auto& arr = results.at("source").at("ground_measurements");
-        if (arr.is_array()) {
-            for (const auto& item : arr.array_items()) {
-                GroundMeasurement gm;
-                gm.site_id = item.contains("site_id") ? item.at("site_id").string_value() : "";
-                gm.timestamp = item.contains("timestamp") ? item.at("timestamp").string_value() : "";
-                gm.pm25_ugm3 = item.contains("pm25_ugm3") ? item.at("pm25_ugm3").number_value() : 0.0;
-                gm.pm10_ugm3 = item.contains("pm10_ugm3") ? item.at("pm10_ugm3").number_value() : 0.0;
-                gm.relative_humidity = item.contains("relative_humidity") ? item.at("relative_humidity").number_value() : 0.0;
-                gm.temperature_c = item.contains("temperature_c") ? item.at("temperature_c").number_value() : 0.0;
-                gm.wind_speed_ms = item.contains("wind_speed_ms") ? item.at("wind_speed_ms").number_value() : 0.0;
-                gm.wind_dir_deg = item.contains("wind_dir_deg") ? item.at("wind_dir_deg").number_value() : 0.0;
-                output.push_back(std::move(gm));
-            }
-        }
-    }
-    return output;
-}
-
-Json to_json_processed(const ProcessedProfile& value) {
-    return to_json(value);
-}
-
-Json to_json_hotspot(const Hotspot& value) {
-    return to_json(value);
+    const HotspotConfig& hotspot_config) {
+    std::vector<const ProcessedProfile*> pointers;
+    pointers.reserve(ppi_profiles.size());
+    for (const auto& profile : ppi_profiles) pointers.push_back(&profile);
+    return detect_hotspots(
+        pointers,
+        hotspot_config.pm25_threshold_ugm3,
+        hotspot_config.scan_relative_pm25_threshold_ugm3,
+        hotspot_config.scan_relative_dry_ext_threshold,
+        hotspot_config.min_cells);
 }
 
 SyntheticCampaign generate_synthetic_campaign(const PipelineConfig& config) {
-    // 直接移动正演结果，不经过 run_end_to_end 的反演、评测和磁盘 JSON 中转。
     CampaignData campaign = simulate_campaign(config);
-    SyntheticCampaign output;
-    output.site = std::move(campaign.site);
-    output.profiles = std::move(campaign.profiles);
-    output.ground_measurements = std::move(campaign.ground_measurements);
-    return output;
+    return SyntheticCampaign{
+        std::move(campaign.site),
+        std::move(campaign.profiles),
+        std::move(campaign.ground_measurements),
+    };
 }

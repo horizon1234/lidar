@@ -1,8 +1,6 @@
 /**
  * @file tcp_server.hpp
- * @brief 跨平台 TCP 服务器：接受连接、按行读取帧、发送帧。
- *
- * Windows 使用 Winsock2，POSIX 使用标准 socket API。
+ * @brief Linux POSIX TCP 服务器：接受连接、按行读取帧、发送帧。
  *
  * 线程模型：start() 在 worker 线程中阻塞运行（accept + recv 循环），
  * 主线程可并发调用 has_client() / is_listening() / send_line()。
@@ -81,8 +79,8 @@ public:
     bool is_listening() const;
 
 private:
-    std::uint16_t port_;
-    std::atomic<int> listen_socket_;  ///< POSIX: fd; Windows: SOCKET cast to int
+    std::uint16_t port_;              ///< 当前 POSIX TCP 监听端口。
+    std::atomic<int> listen_socket_;  ///< 当前监听 socket 文件描述符。
     std::atomic<int> client_socket_;  ///< 当前活跃客户端（原子：子线程写、主线程读）
     std::atomic<bool> running_;       ///< 服务器运行标志
     std::mutex send_mutex_;           ///< 串行化 send_line()，防止并发 send() 字节交错

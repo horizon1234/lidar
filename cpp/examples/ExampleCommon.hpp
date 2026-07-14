@@ -9,7 +9,7 @@
  * 涵盖内容:
  *   - 数学工具: clamp / deg2rad / mean / gaussian1d / polar_to_enu
  *   - 可重复伪随机数生成器 Rng (xorshift64 PRNG + Box-Muller 高斯),
- *     用于跨平台 (MSVC/MinGW/GCC/Clang) 复现
+ *     用于 Linux GCC/Clang 环境复现
  *   - 极简 dump-only JSON 构造器 JsonValue
  *     (Number / Bool / String / Array / Object)
  *   - 数值辅助: round6 (向量与标量重载), doubles_to_json, ints_to_json
@@ -34,13 +34,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-
-#ifdef _WIN32
-// 启用 Windows 终端 ANSI 转义需要 SetConsoleMode
-// NOMINMAX 防止 windows.h 把 min/max 定义成宏, 否则 std::min/std::max 会被破坏
-#define NOMINMAX
-#include <windows.h>
-#endif
 
 namespace example_common {
 
@@ -396,28 +389,16 @@ inline void write_json_file(const std::filesystem::path& path, const JsonValue& 
 }
 
 // ============================================================================
-// ---- 终端彩色打印 (Windows 10+ 支持 ANSI 转义) ----
+// ---- 终端彩色打印 ----
 // ============================================================================
 
 /**
  * @brief 启用终端 ANSI 颜色转义支持
  *
- * 在 Windows 10 1511+ 上默认禁用 ANSI, 需要通过 SetConsoleMode 打开
- * ENABLE_VIRTUAL_TERMINAL_PROCESSING (0x0004) 才能让教学算例输出的颜色正常显示。
- * Linux/macOS 上为空实现。
+ * Linux 终端原生支持 ANSI 转义，无需额外初始化；保留函数是为了让三个教学
+ * 算例使用统一入口。
  */
-inline void enable_ansi_color() {
-#ifdef _WIN32
-    // Windows 10 1511+ 默认禁用 ANSI, 需要 SetConsoleMode 启用
-    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (h != INVALID_HANDLE_VALUE) {
-        DWORD mode = 0;
-        if (GetConsoleMode(h, &mode)) {
-            SetConsoleMode(h, mode | 0x0004 /* ENABLE_VIRTUAL_TERMINAL_PROCESSING */);
-        }
-    }
-#endif
-}
+inline void enable_ansi_color() {}
 
 /**
  * @brief 打印章节标题分隔栏 (用于教学算例输出可读性)
@@ -442,19 +423,14 @@ inline void print_step(const std::string& label) {
  * @brief 获取当前 UTC 时间戳 (ISO 8601 格式, 精度到秒)
  * @return 形如 "2025-01-15T08:30:00Z" 的字符串
  *
- * 使用跨平台的 gmtime_s (Windows) / gmtime_r (POSIX) 实现线程安全的
- * 时间转换, 用于教学输出中的时间标注。
+ * 使用 POSIX gmtime_r 实现线程安全的时间转换，用于教学输出中的时间标注。
  */
 inline std::string now_iso_utc() {
     using namespace std::chrono;
     auto now = system_clock::now();
     std::time_t t = system_clock::to_time_t(now);
     std::tm tm{};
-#ifdef _WIN32
-    gmtime_s(&tm, &t);
-#else
     gmtime_r(&t, &tm);
-#endif
     char buf[40];
     std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
     return std::string(buf);

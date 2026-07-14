@@ -35,10 +35,6 @@ add_library(lidar_client STATIC
     src/VerticalProfileWidget.cpp
     src/AlarmPanel.cpp
     src/MainWindow.cpp
-    src/AlarmStateMachine.cpp
-    src/HotspotTracker.cpp
-    src/DisposalLinkage.cpp
-    src/ReportGenerator.cpp
     include/lidar_client/LidarClientWorker.hpp
     include/lidar_client/DisplaySnapshot.hpp
     include/lidar_client/MainWindow.hpp
@@ -58,10 +54,6 @@ target_link_libraries(lidar_client PUBLIC
     Qt6::Gui
     Qt6::Widgets
     Qt6::Network
-)
-
-target_compile_definitions(lidar_client PUBLIC
-    LIDAR_CLIENT_LINUX_QT=1
 )
 
 add_executable(lidar_gui

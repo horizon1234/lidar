@@ -1,7 +1,5 @@
 #include "lidar_client/DeviceStatusModel.hpp"
 
-#include <sstream>
-
 namespace lidar_client {
 
 namespace {
@@ -54,24 +52,6 @@ bool get_bool(const lidar_core::Json& json, const char* key, bool fallback = fal
     return json.contains(key) && json.at(key).is_bool()
         ? json.at(key).bool_value()
         : fallback;
-}
-
-lidar_core::Json number_array_to_json(const std::vector<double>& values) {
-    lidar_core::Json::Array array;
-    array.reserve(values.size());
-    for (double value : values) {
-        array.emplace_back(value);
-    }
-    return lidar_core::Json(std::move(array));
-}
-
-lidar_core::Json string_array_to_json(const std::vector<std::string>& values) {
-    lidar_core::Json::Array array;
-    array.reserve(values.size());
-    for (const auto& value : values) {
-        array.emplace_back(value);
-    }
-    return lidar_core::Json(std::move(array));
 }
 
 } // namespace
@@ -220,79 +200,6 @@ bool DeviceStatusModel::update_from_frame(const lidar_protocol::Frame& frame) {
     }
     snapshot_.valid = true;
     return true;
-}
-
-lidar_core::Json DeviceStatusModel::to_json() const {
-    return lidar_core::Json::Object{
-        {"valid", snapshot_.valid},
-        {"site_id", snapshot_.site_id},
-        {"site_name", snapshot_.site_name},
-        {"manufacturer", snapshot_.manufacturer},
-        {"product_name", snapshot_.product_name},
-        {"device_model", snapshot_.device_model},
-        {"regulatory_model", snapshot_.regulatory_model},
-        {"device_state", snapshot_.device_state},
-        {"vendor_profile", snapshot_.vendor_profile},
-        {"protocol_version", snapshot_.protocol_version},
-        {"calibration_status", snapshot_.calibration_status},
-        {"scan_program_mode", snapshot_.scan_program_mode},
-        {"active_scan_pattern", snapshot_.active_scan_pattern},
-        {"elevation_cycle_policy", snapshot_.elevation_cycle_policy},
-        {"specification_basis", snapshot_.specification_basis},
-        {"ingress_protection", snapshot_.ingress_protection},
-        {"receiver_channels", string_array_to_json(snapshot_.receiver_channels)},
-        {"ppi_elevations_deg", number_array_to_json(snapshot_.ppi_elevations_deg)},
-        {"scheduled_elevations_deg", number_array_to_json(snapshot_.scheduled_elevations_deg)},
-        {"active_ppi_elevation_deg", snapshot_.active_ppi_elevation_deg},
-        {"ppi_azimuth_start_deg", snapshot_.ppi_azimuth_start_deg},
-        {"ppi_azimuth_stop_deg", snapshot_.ppi_azimuth_stop_deg},
-        {"ppi_azimuth_step_deg", snapshot_.ppi_azimuth_step_deg},
-        {"ppi_line_dwell_s", snapshot_.ppi_line_dwell_s},
-        {"ppi_step_overhead_s", snapshot_.ppi_step_overhead_s},
-        {"stare_dwell_s", snapshot_.stare_dwell_s},
-        {"ppi_scan_cycle_s", snapshot_.ppi_scan_cycle_s},
-        {"full_scan_cycle_s", snapshot_.full_scan_cycle_s},
-        {"playback_time_scale", snapshot_.playback_time_scale},
-        {"pulse_repetition_hz", snapshot_.pulse_repetition_hz},
-        {"wavelength_nm", snapshot_.wavelength_nm},
-        {"range_resolution_m", snapshot_.range_resolution_m},
-        {"maximum_range_m", snapshot_.maximum_range_m},
-        {"near_telescope_aperture_mm", snapshot_.near_telescope_aperture_mm},
-        {"far_telescope_aperture_mm", snapshot_.far_telescope_aperture_mm},
-        {"electronics_temperature_c", snapshot_.electronics_temperature_c},
-        {"relative_humidity", snapshot_.relative_humidity},
-        {"gimbal_azimuth_deg", snapshot_.gimbal_azimuth_deg},
-        {"gimbal_elevation_deg", snapshot_.gimbal_elevation_deg},
-        {"elevation_schedule_index", snapshot_.elevation_schedule_index},
-        {"integrated_pulses_per_line", snapshot_.integrated_pulses_per_line},
-        {"total_steps", snapshot_.total_steps},
-        {"vendor_wire_protocol_known", snapshot_.vendor_wire_protocol_known},
-        {"polarization_channel", snapshot_.polarization_channel},
-        {"camera_online", snapshot_.camera_online},
-    };
-}
-
-std::string DeviceStatusModel::brief() const {
-    if (!snapshot_.valid) {
-        return "device status unavailable";
-    }
-
-    std::ostringstream output;
-    output << snapshot_.device_model
-           << " (" << snapshot_.regulatory_model << ")"
-           << " state=" << snapshot_.device_state
-           << " wavelength=" << snapshot_.wavelength_nm << "nm"
-           << " range=" << snapshot_.maximum_range_m << "m"
-           << " PRF=" << snapshot_.pulse_repetition_hz << "Hz"
-           << " stare=" << snapshot_.stare_dwell_s << "s"
-           << " dwell=" << snapshot_.ppi_line_dwell_s << "s"
-           << " move=" << snapshot_.ppi_step_overhead_s << "s"
-           << " sector=" << snapshot_.ppi_azimuth_start_deg
-           << "-" << snapshot_.ppi_azimuth_stop_deg
-           << " step=" << snapshot_.ppi_azimuth_step_deg
-           << " cycle=" << snapshot_.full_scan_cycle_s << "s"
-           << " playback=x" << snapshot_.playback_time_scale;
-    return output.str();
 }
 
 } // namespace lidar_client

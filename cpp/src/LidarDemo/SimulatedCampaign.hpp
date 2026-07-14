@@ -3,20 +3,16 @@ struct CampaignData {
     SiteInfo site;
     std::vector<LidarProfile> profiles;
     std::vector<GroundMeasurement> ground_measurements;
-    Json source_metadata;
 };
 
 /**
  * @brief 生成一整次合成观测战役（CampaignData），含 stare 与 PPI 两类扫描。
  *
- * 该函数是 demo 模式的核心：按时间步循环为每个时刻生成
- *   - 一条 zenith stare（仰角 90°，方位 0°）用于 PM 反演锚定；
- *   - 一组 PPI（仰角固定，方位角 0~360° 按步进）用于热点检测；
- *   - 一条地面观测，用于训练/校准 PM 模型。
- * 各气象量沿 time_phase 做正余弦周期变化并叠加随机扰动，模拟典型日变化。
+ * 设备层通常一次只请求一个周期：可选的 90 度垂直观测、一个固定仰角方位圈，
+ * 以及可选的合成地面观测。各气象量沿周期相位变化并叠加可复现噪声。
  *
  * @param[in] config 流水线配置（含 simulation 段：seed、time_steps、ppi 步进、lidar_ratio 等）。
- * @return 完整观测战役数据（站点 + 廓线 + 地面观测 + 来源元数据）。
+ * @return 当前 YLJ5 周期数据（站点 + 廓线 + 地面观测）。
  */
 CampaignData simulate_campaign(const PipelineConfig& config) {
     CampaignData data;
@@ -39,7 +35,6 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
     for (int index = 0; index < config.simulation.range_bin_count; ++index) {
         ranges_m.push_back(config.simulation.range_bin_m * static_cast<double>(index + 1));
     }
-    std::vector<double> overlap = build_overlap(ranges_m, config.simulation.full_overlap_m, config.simulation.min_overlap);
     int phase_steps = config.simulation.phase_time_steps > 0
         ? config.simulation.phase_time_steps
         : config.simulation.time_steps;
@@ -62,19 +57,12 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
         double wind_dir_deg = std::fmod(120.0 + 45.0 * std::sin(time_phase) + sample_gaussian(rng, 0.0, 4.0) + 360.0, 360.0);
         // 背景计数与激光能量：基线 + 小幅随机抖动，反映仪器状态
         double solar_cycle = 0.65 + 0.35 * (1.0 + std::sin(time_phase - 0.4)) / 2.0;
-        double background_counts = 0.0;
-        double laser_energy_mj = 0.0;
-        if (config.simulation.application_mode == "legacy_demo") {
-            background_counts = 10.5 + sample_gaussian(rng, 0.0, 0.5);
-            laser_energy_mj = 1.0 + sample_gaussian(rng, 0.0, 0.03);
-        } else {
-            background_counts = std::max(2.0,
-                config.simulation.background_counts_mean * solar_cycle
-                + sample_gaussian(rng, 0.0, config.simulation.background_counts_jitter));
-            laser_energy_mj = std::max(1e-6,
-                config.simulation.pulse_energy_mj
-                * (1.0 + sample_gaussian(rng, 0.0, config.simulation.pulse_energy_jitter)));
-        }
+        const double background_counts = std::max(2.0,
+            config.simulation.background_counts_mean * solar_cycle
+            + sample_gaussian(rng, 0.0, config.simulation.background_counts_jitter));
+        const double laser_energy_mj = std::max(1e-6,
+            config.simulation.pulse_energy_mj
+            * (1.0 + sample_gaussian(rng, 0.0, config.simulation.pulse_energy_jitter)));
 
         // -- zenith stare 廓线：用于 PM 反演真值锚定 --
         SimulatedFields stare_fields = simulate_profile_fields(
@@ -88,35 +76,19 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
             wind_speed_ms,
             wind_dir_deg,
             config.simulation);
-        std::vector<double> stare_raw_counts;
-        if (!config.simulation.enable_ylj5_receiver_channels) {
-            stare_raw_counts = simulate_raw_counts(
-                stare_fields.true_backscatter,
-                stare_fields.true_extinction,
-                overlap,
-                ranges_m,
-                laser_energy_mj,
-                background_counts,
-                config.simulation.stare_dwell_s,
-                1.0,
-                config.simulation,
-                rng
-            );
-        }
-
         LidarProfile stare_profile{
             data.site.site_id,
             timestamp,
             timestamp + "_stare",
             "stare",
-            "synthetic_stare",
+            "ylj5_synthetic_stare",
             0.0,
             90.0,
             ranges_m,
-            stare_raw_counts,
+            {},
             laser_energy_mj,
             background_counts,
-            overlap,
+            {},
             relative_humidity,
             temperature_c,
             wind_speed_ms,
@@ -128,21 +100,21 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
             stare_fields.true_pm25,
             stare_fields.true_pm10,
             stare_fields.true_hotspot_mask,
+            {},
+            {},
         };
-        if (config.simulation.enable_ylj5_receiver_channels) {
-            auto channels = simulate_ylj5_receiver_channels(
-                stare_fields,
-                ranges_m,
-                laser_energy_mj,
-                background_counts,
-                config.simulation.stare_dwell_s,
-                config.simulation,
-                rng);
-            stare_profile.raw_counts = std::move(channels.merged_parallel_counts);
-            stare_profile.overlap = std::move(channels.merged_overlap);
-            stare_profile.channels = std::move(channels.channels);
-            stare_profile.depolarization_ratio = std::move(channels.depolarization_ratio);
-        }
+        auto stare_channels = simulate_ylj5_receiver_channels(
+            stare_fields,
+            ranges_m,
+            laser_energy_mj,
+            background_counts,
+            config.simulation.stare_dwell_s,
+            config.simulation,
+            rng);
+        stare_profile.raw_counts = std::move(stare_channels.merged_parallel_counts);
+        stare_profile.overlap = std::move(stare_channels.merged_overlap);
+        stare_profile.channels = std::move(stare_channels.channels);
+        stare_profile.depolarization_ratio = std::move(stare_channels.depolarization_ratio);
         if (config.simulation.include_stare_profile) {
             data.profiles.push_back(std::move(stare_profile));
         }
@@ -166,21 +138,6 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
                     wind_dir_deg,
                     config.simulation
                 );
-                std::vector<double> ppi_raw_counts;
-                if (!config.simulation.enable_ylj5_receiver_channels) {
-                    ppi_raw_counts = simulate_raw_counts(
-                        ppi_fields.true_backscatter,
-                        ppi_fields.true_extinction,
-                        overlap,
-                        ranges_m,
-                        laser_energy_mj,
-                        background_counts,
-                        config.simulation.ppi_line_dwell_s,
-                        1.0,
-                        config.simulation,
-                        rng
-                    );
-                }
                 double local_peak = 0.0;
                 for (int index = 0;
                      index < std::min<int>(4, static_cast<int>(ppi_fields.true_extinction.size()));
@@ -205,14 +162,14 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
                     timestamp,
                     scan_id,
                     "ppi",
-                    "synthetic_ppi",
+                    "ylj5_synthetic_ppi",
                     azimuth,
                     elevation,
                     ranges_m,
-                    ppi_raw_counts,
+                    {},
                     laser_energy_mj,
                     background_counts,
-                    overlap,
+                    {},
                     relative_humidity,
                     temperature_c,
                     wind_speed_ms,
@@ -224,21 +181,21 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
                     ppi_fields.true_pm25,
                     ppi_fields.true_pm10,
                     ppi_fields.true_hotspot_mask,
+                    {},
+                    {},
                 };
-                if (config.simulation.enable_ylj5_receiver_channels) {
-                    auto channels = simulate_ylj5_receiver_channels(
-                        ppi_fields,
-                        ranges_m,
-                        laser_energy_mj,
-                        background_counts,
-                        config.simulation.ppi_line_dwell_s,
-                        config.simulation,
-                        rng);
-                    profile.raw_counts = std::move(channels.merged_parallel_counts);
-                    profile.overlap = std::move(channels.merged_overlap);
-                    profile.channels = std::move(channels.channels);
-                    profile.depolarization_ratio = std::move(channels.depolarization_ratio);
-                }
+                auto channels = simulate_ylj5_receiver_channels(
+                    ppi_fields,
+                    ranges_m,
+                    laser_energy_mj,
+                    background_counts,
+                    config.simulation.ppi_line_dwell_s,
+                    config.simulation,
+                    rng);
+                profile.raw_counts = std::move(channels.merged_parallel_counts);
+                profile.overlap = std::move(channels.merged_overlap);
+                profile.channels = std::move(channels.channels);
+                profile.depolarization_ratio = std::move(channels.depolarization_ratio);
                 data.profiles.push_back(std::move(profile));
             }
         }
@@ -267,42 +224,5 @@ CampaignData simulate_campaign(const PipelineConfig& config) {
         });
     }
 
-    // 来源元数据：记录该战役为纯仿真模式
-    int ppi_count = 0;
-    for (const auto& profile : data.profiles) {
-        if (profile.scan_mode == "ppi") {
-            ++ppi_count;
-        }
-    }
-    data.source_metadata = Json::Object{
-        {"mode", "simulation"},
-        {"site_id", data.site.site_id},
-        {"site_name", data.site.name},
-        {"instrument_preset", config.simulation.instrument_preset},
-        {"application_mode", config.simulation.application_mode},
-        {"vendor_profile", config.simulation.vendor_profile},
-        {"wavelength_nm", config.simulation.wavelength_nm},
-        {"range_bin_m", config.simulation.range_bin_m},
-        {"full_overlap_m", config.simulation.full_overlap_m},
-        {"truth_hotspot_ext_threshold", config.simulation.truth_hotspot_ext_threshold},
-        {"ppi_elevations_deg", [&]() {
-            Json::Array values;
-            for (double elevation : config.simulation.effective_ppi_elevations_deg()) {
-                values.emplace_back(elevation);
-            }
-            return Json(std::move(values));
-        }()},
-        {"ppi_azimuth_start_deg", config.simulation.ppi_azimuth_start_deg},
-        {"ppi_azimuth_stop_deg", config.simulation.ppi_azimuth_stop_deg},
-        {"ppi_azimuth_step_deg", config.simulation.ppi_azimuth_step_deg},
-        {"ppi_line_dwell_s", config.simulation.ppi_line_dwell_s},
-        {"ppi_step_overhead_s", config.simulation.ppi_step_overhead_s},
-        {"ppi_scan_overhead_s", config.simulation.ppi_scan_overhead_s},
-        {"ppi_scan_cycle_s", config.simulation.ppi_scan_cycle_seconds()},
-        {"pulse_repetition_hz", config.simulation.pulse_repetition_hz},
-        {"integrated_pulses_per_line", static_cast<int>(std::round(config.simulation.pulse_repetition_hz * config.simulation.ppi_line_dwell_s))},
-        {"real_stare_profile_count", 0},
-        {"synthetic_ppi_profile_count", ppi_count},
-    };
     return data;
 }

@@ -1,197 +1,114 @@
 /**
  * @file PipelineConfig.hpp
- * @brief Public pipeline configuration types.
+ * @brief YLJ5 正演和实时反演所需的最小配置类型。
  */
 #pragma once
 
 #include "LidarDemo/DataTypes.hpp"
 
 #include <cmath>
-#include <string>
 #include <vector>
 
 namespace lidar_demo {
 
-// ============================================================================
-// 各阶段配置
-// ============================================================================
-
-/**
- * @brief 仿真配置
- *
- * 控制合成 LiDAR 场景生成的全部参数（时间步、距离分辨率、PPI 扫描几何、
- * 系统常数、激光雷达比等）。
- *
- * PPI 多仰角：真实扫描雷达一个体积扫描（volume scan）会顺序扫描多个仰角，
- * 每个仰角各做一圈方位扫描，从而得到三维体数据。`ppi_elevations_deg`
- * 为空时退化为旧行为（仅一个仰角），保证向后兼容。
- */
+/** @brief YLJ5 单周期四通道正演配置，由设备层集中填充。 */
 struct SimulationConfig {
-    std::string instrument_preset = "near_ir_micro_pulse_pm_lidar"; ///< 设备预设：demo_lidar / near_ir_micro_pulse_pm_lidar / field_scanning_pm_lidar / ceilometer_profile / mobile_mapping_lidar
-    std::string application_mode = "legacy_demo";              ///< 应用场景：legacy_demo / construction_site / urban_grid / mobile_mapping
-    std::string vendor_profile = "near_ir_micro_pulse_pm_like"; ///< 公开格式映射：generic_jsonl / near_ir_micro_pulse_pm_like / vaisala_cl61_like / raymetrics_pmeye_like / halo_hpl_like
-    int seed = 7;                          ///< 随机数种子（决定可复现性）
-    int time_steps = 18;                   ///< 仿真的时间步数量
-    int minutes_per_step = 20;            ///< 相邻时间步的间隔（分钟）
-    int start_step_index = 0;              ///< 分段/惰性生成时的全局起始步索引
-    int phase_time_steps = 0;              ///< 日变化相位总步数；0 表示使用 time_steps
-    int range_bin_count = 60;             ///< 每条射线的距离 bin 数量
-    double range_bin_m = 100.0;           ///< 相邻距离 bin 的间距（m）
-    /// PPI 体积扫描的仰角序列（°，高于水平面）。
-    /// 默认 {5,15,30,45,60,75} 为接近商用气溶胶扫描雷达的 6 层体积扫描方案
-    /// （如 Raymetrics / 国产扫描激光雷达的常规配置）。配套参数已按商用尺度标定：
-    /// 量程 6 km（60 bin × 100 m）、边界层标高 1200 m、烟羽高度 280/380 m。
-    /// 高仰角 75° 在 6 km 处达 5.8 km，仍在对流层下部，信号有意义；
-    /// 烟羽 1（280 m/2200 m）所需仰角约 7°，由 15° 层捕捉；最低 5° 层覆盖近场低空源。
-    /// 为空时退化为单个低仰角（兼容旧配置）。
-    std::vector<double> ppi_elevations_deg = {5.0, 15.0, 30.0, 45.0, 60.0, 75.0};
-    double ppi_azimuth_start_deg = 0.0;   ///< PPI/扇区扫描起始方位角（°，正北顺时针）
-    double ppi_azimuth_stop_deg = 360.0;  ///< PPI/扇区扫描结束方位角（°）；360 表示完整一圈但不重复 0°
-    double ppi_azimuth_step_deg = 30.0;   ///< PPI 扫描的方位角步进（°）
-    double ppi_line_dwell_s = 1.0;        ///< 每条视线的积分/驻留时间（s），商用 PM 扫描雷达常见量级为秒到十秒
-    double ppi_step_overhead_s = 0.0;     ///< 相邻方位/仰角切换、转台稳定、编码器确认的单视线平均耗时（s）
-    double ppi_scan_overhead_s = 0.0;      ///< 一次扫描周期的转台回零、状态上报等额外耗时（s）
-    bool include_stare_profile = true;     ///< 是否在扫描周期前生成一条垂直观测
-    double stare_dwell_s = 30.0;           ///< 垂直观测积分时间（s）
-    double pulse_repetition_hz = 5000.0;  ///< 激光脉冲重复频率（Hz），是激光 shot 频率，不是完整 profile 上报频率
-    double system_constant = 6500000000.0; ///< LiDAR 系统常数 C（正演发射方程用）；C·E 乘积需与能量匹配
-    double lidar_ratio_sr = 45.0;         ///< 气溶胶激光雷达比（sr，消光后向散射比）
-    double wavelength_nm = 532.0;         ///< 激光波长（nm），MPL 类主流 532nm；近红外可选 905/910/1064/1550nm
-    double pulse_energy_mj = 0.02;        ///< 单脉冲能量均值（mJ），微脉冲 MPL 典型 10~50μJ；靠 kHz 积分凑信噪比
-    double pulse_energy_jitter = 0.03;    ///< 脉冲能量相对抖动（1 sigma）
-    double background_counts_mean = 10.5; ///< 背景/暗计数均值（计数）
-    double background_counts_jitter = 0.5;///< 背景计数随机扰动（1 sigma）
-    double full_overlap_m = 40.0;         ///< 进入完整 overlap 的距离（m）；双望远镜可压到几十米
-    double min_overlap = 0.22;            ///< 近场最小 overlap
-    double detector_dark_counts = 0.0;    ///< 探测器暗计数等效均值
-    double read_noise_counts = 0.0;       ///< 读出噪声（计数）
-    double adc_saturation_counts = 2000000.0; ///< 探测器/ADC 硬饱和上限（安全阀）；SPAD 典型 Mcp·rate~数百万
-    double dead_time_loss = 0.0000025;   ///< photon-counting 死时间软压缩系数 α；N_obs=N/(1+α·N)，近场强回波压成软平台而非硬墙
-    double afterpulsing_ratio = 0.02;    ///< APD/SPAD afterpulsing 比例（0~0.05）；捕获载流子在下一 bin 释放产生的延迟伪计数
-    double solar_background_scale = 1.0;  ///< 太阳背景强度缩放，移动/白天工地可调高
-    double vehicle_speed_ms = 0.0;        ///< 走航模式下平台速度（m/s），固定站为 0
-    double truth_hotspot_ext_threshold = 0.025; ///< 真值热点掩膜的烟羽干消光贡献阈值，默认保留旧行为
+    std::string application_mode = "construction_site"; ///< 污染场景：construction_site/urban_grid/mobile_mapping。
+    int seed = 7;                         ///< 随机种子，保证周期可复现。
+    int time_steps = 1;                   ///< 本次惰性生成的周期数，设备固定为 1。
+    int minutes_per_step = 8;             ///< 场景相位的周期间隔（分钟）。
+    int start_step_index = 0;             ///< 当前全局周期索引。
+    int phase_time_steps = 180;           ///< 一轮场景日变化使用的周期数。
+    int range_bin_count = 5334;           ///< 距离门数量。
+    double range_bin_m = 3.75;            ///< 距离分辨率（米）。
+    std::vector<double> ppi_elevations_deg = {0.0}; ///< 当前周期固定方位扫描仰角。
+    double ppi_azimuth_start_deg = 0.0;   ///< 方位扫描起点（度）。
+    double ppi_azimuth_stop_deg = 360.0;  ///< 方位扫描终点（度）。
+    double ppi_azimuth_step_deg = 2.0;    ///< 相邻射线方位步进（度）。
+    double ppi_line_dwell_s = 2.0;        ///< 单条方位射线积分时间（秒）。
+    double ppi_step_overhead_s = 0.2;     ///< 云台移动与稳定时间（秒）。
+    double ppi_scan_overhead_s = 10.0;    ///< 单圈固定开销（秒）。
+    bool include_stare_profile = true;    ///< 是否先生成 90 度垂直观测。
+    double stare_dwell_s = 30.0;          ///< 垂直观测积分时间（秒）。
+    double pulse_repetition_hz = 5000.0;  ///< 假设的激光脉冲重复频率（Hz）。
+    double system_constant = 6500000000.0; ///< 正演 LiDAR 方程系统常数。
+    double lidar_ratio_sr = 45.0;         ///< 仿真假设的气溶胶激光雷达比（sr）。
+    double wavelength_nm = 532.0;         ///< 工作波长（nm）。
+    double pulse_energy_mj = 0.02;        ///< 假设的单脉冲能量（mJ）。
+    double pulse_energy_jitter = 0.015;   ///< 脉冲能量相对抖动。
+    double background_counts_mean = 80.0; ///< 单脉冲等效背景计数均值。
+    double background_counts_jitter = 12.0; ///< 周期间背景计数标准差。
+    double detector_dark_counts = 8.0;    ///< 探测器暗计数等效均值。
+    double read_noise_counts = 3.0;       ///< 读出噪声标准差。
+    double adc_saturation_counts = 2000000.0; ///< ADC/计数通道仿真饱和上限。
+    double dead_time_loss = 0.0000025;    ///< 光子计数死时间软压缩系数。
+    double afterpulsing_ratio = 0.02;     ///< 后脉冲比例。
+    double solar_background_scale = 1.0; ///< 太阳背景缩放系数。
+    double vehicle_speed_ms = 0.0;       ///< 走航平台速度；固定站为 0。
+    double truth_hotspot_ext_threshold = 0.025; ///< 仿真真值热点消光阈值。
+    double near_telescope_aperture_mm = 40.0; ///< 近场望远镜口径（mm）。
+    double far_telescope_aperture_mm = 160.0; ///< 远场望远镜口径（mm）。
+    double near_channel_gain = 0.08;     ///< 近场接收链相对增益假设。
+    double near_full_overlap_m = 3.75;   ///< 近场完整 overlap 假设距离（米）。
+    double far_full_overlap_m = 120.0;   ///< 远场完整 overlap 假设距离（米）。
+    double far_min_overlap = 0.02;       ///< 远场近端最小 overlap。
+    double channel_stitch_range_m = 150.0; ///< 近远场拼接尺度（米）。
 
-    // YLJ5 公开规格接收模型；旧批处理配置默认关闭，以保持原有单通道行为。
-    bool enable_ylj5_receiver_channels = false; ///< 是否生成近/远场双望远镜四偏振通道。
-    double near_telescope_aperture_mm = 40.0;   ///< 近场望远镜口径（mm），默认取采购上限。
-    double far_telescope_aperture_mm = 160.0;   ///< 远场望远镜口径（mm），默认取采购下限。
-    double near_channel_gain = 0.08;            ///< 近场接收链相对增益假设。
-    double near_full_overlap_m = 3.75;          ///< 近场通道完整重叠距离假设（m）。
-    double far_full_overlap_m = 120.0;          ///< 远场通道完整重叠距离假设（m）。
-    double far_min_overlap = 0.02;              ///< 远场通道近端最小重叠因子。
-    double channel_stitch_range_m = 150.0;      ///< 近远场兼容主通道的平滑拼接尺度（m）。
-
-    /**
-     * @brief 取有效仰角列表（兼容旧配置）。
-     *
-     * 若 `ppi_elevations_deg` 为空，则返回单个低仰角占位值 {8.0}，
-     * 使得旧的单仰角配置仍能运行（只是不再多仰角扫描）。
-     */
+    /** @brief 返回当前周期仰角；空配置安全退化为 0 度水平扫描。 */
     std::vector<double> effective_ppi_elevations_deg() const {
-        return ppi_elevations_deg.empty()
-            ? std::vector<double>{8.0}
-            : ppi_elevations_deg;
+        return ppi_elevations_deg.empty() ? std::vector<double>{0.0} : ppi_elevations_deg;
     }
 
-    /**
-     * @brief 取有效 PPI 方位角列表。
-     *
-     * 默认 [0, 360) 保持旧的完整 PPI 行为；当 stop-start 小于 360 时按闭区间生成
-     * 扇区扫描，例如 0..180 且步进 2.5° 会得到 73 条视线。
-     */
+    /** @brief 根据角域和步进生成方位角，不重复完整圆的终点。 */
     std::vector<double> effective_ppi_azimuths_deg() const {
         std::vector<double> azimuths;
-        double step = ppi_azimuth_step_deg > 0.0 ? ppi_azimuth_step_deg : 1.0;
+        const double step = ppi_azimuth_step_deg > 0.0 ? ppi_azimuth_step_deg : 1.0;
         double span = ppi_azimuth_stop_deg - ppi_azimuth_start_deg;
-        if (span <= 0.0) {
-            span += 360.0;
-        }
-        bool full_circle = span >= 360.0 - 1e-9;
-        double end = ppi_azimuth_start_deg + span;
+        if (span <= 0.0) span += 360.0;
+        const bool full_circle = span >= 360.0 - 1e-9;
+        const double end = ppi_azimuth_start_deg + span;
         for (double azimuth = ppi_azimuth_start_deg;
-             full_circle ? (azimuth < end - 1e-9) : (azimuth <= end + 1e-9);
+             full_circle ? azimuth < end - 1e-9 : azimuth <= end + 1e-9;
              azimuth += step) {
             double normalized = std::fmod(azimuth, 360.0);
-            if (normalized < 0.0) {
-                normalized += 360.0;
-            }
+            if (normalized < 0.0) normalized += 360.0;
             azimuths.push_back(normalized);
         }
         return azimuths.empty() ? std::vector<double>{0.0} : azimuths;
     }
 
+    /** @brief 计算当前周期固定仰角方位扫描时长。 */
     double ppi_scan_cycle_seconds() const {
-        return static_cast<double>(effective_ppi_elevations_deg().size() * effective_ppi_azimuths_deg().size())
+        return static_cast<double>(
+            effective_ppi_elevations_deg().size() * effective_ppi_azimuths_deg().size())
             * (ppi_line_dwell_s + ppi_step_overhead_s) + ppi_scan_overhead_s;
     }
 };
 
-/**
- * @brief 反演配置
- *
- * Fernald/Klett 反演所用的参数。
- */
+/** @brief Fernald/Klett 弹性反演参数。 */
 struct RetrievalConfig {
-    double aerosol_lidar_ratio_sr = 45.0;        ///< 气溶胶激光雷达比（sr）
-    double reference_aerosol_backscatter = 0.0004; ///< 参考点处的气溶胶后向散射系数
+    double aerosol_lidar_ratio_sr = 45.0;          ///< 气溶胶激光雷达比（sr）。
+    double reference_aerosol_backscatter = 0.0004; ///< 远端参考气溶胶后向散射。
 };
 
-/**
- * @brief 湿度校正配置
- *
- * 控制吸湿增长因子 f(RH) 的两个参数，用于把"湿"消光换算为"干"消光。
- */
+/** @brief 湿度修正参数。 */
 struct HumidityConfig {
-    double dry_reference_rh = 0.45;  ///< 干燥参考点的相对湿度（0~1）
-    double hygroscopicity = 1.1;     ///< 吸湿性参数 κ（越大表示颗粒越易吸湿增长）
+    double dry_reference_rh = 0.45; ///< 干参考相对湿度。
+    double hygroscopicity = 1.1;    ///< 吸湿性参数。
 };
 
-/**
- * @brief PM 标定配置
- *
- * 控制 PM2.5/PM10 回归标定的训练集划分与特征构造。
- */
-struct PmCalibrationConfig {
-    double train_ratio = 0.6;   ///< 训练集比例（其余按 val_ratio 划分验证/测试）
-    double val_ratio = 0.2;     ///< 验证集比例
-    int surface_bin_count = 6;  ///< 自地面起算用于特征提取的近端 bin 数
-};
-
-/**
- * @brief 热点检测配置
- *
- * 控制热点判定阈值与最小连通域规模。
- */
+/** @brief 已标定 PM 热点检测参数。 */
 struct HotspotConfig {
-    double pm25_threshold_ugm3 = 50.0;             ///< PM2.5 绝对阈值（µg/m³）
-    double scan_relative_pm25_threshold_ugm3 = 0.18; ///< PM2.5 相对阈值（相对中位数的增量）
-    double scan_relative_dry_ext_threshold = 0.02;  ///< 干消光相对阈值
-    int min_cells = 3;                             ///< 热点连通域所需的最小像元数
+    double pm25_threshold_ugm3 = 50.0;              ///< PM2.5 绝对阈值。
+    double scan_relative_pm25_threshold_ugm3 = 0.18; ///< 相对背景 PM2.5 增量阈值。
+    double scan_relative_dry_ext_threshold = 0.02;  ///< 衰减后向散射相对增强阈值。
+    int min_cells = 3;                              ///< 最小连通像元数。
 };
 
-/**
- * @brief 评估配置
- */
-struct EvaluationConfig {
-    std::vector<double> sensitivity_lidar_ratios; ///< 做灵敏度分析时要尝试的激光雷达比列表
-};
-/**
- * @brief 管线总配置
- *
- * 汇总上述所有配置段，以及顶层的数据源模式。通常由 parse_pipeline_config
- * 从一个 JSON 配置文件解析得到。
- */
+/** @brief YLJ5 单周期正演聚合配置。 */
 struct PipelineConfig {
-    std::string source_mode = "simulation"; ///< 数据源模式（取自 source.mode，便于快速判断）
-    SourceConfig source;     ///< 数据源配置
-    SiteInfo site;           ///< 站点信息
-    SimulationConfig simulation;     ///< 仿真配置
-    RetrievalConfig retrieval;       ///< 反演配置
-    HumidityConfig humidity;         ///< 湿度校正配置
-    PmCalibrationConfig pm_calibration; ///< PM 标定配置
-    HotspotConfig hotspot;           ///< 热点检测配置
-    EvaluationConfig evaluation;     ///< 评估配置
+    SiteInfo site;               ///< 当前设备部署站点。
+    SimulationConfig simulation; ///< 四通道正演参数。
 };
 
 } // namespace lidar_demo

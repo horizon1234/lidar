@@ -21,11 +21,6 @@ target_link_libraries(lidar_server PUBLIC
 find_package(Threads REQUIRED)
 target_link_libraries(lidar_server PUBLIC Threads::Threads)
 
-# Windows 需要链接 ws2_32
-if(WIN32)
-    target_link_libraries(lidar_server PUBLIC ws2_32)
-endif()
-
 # ---- 服务器可执行文件 ----
 add_executable(lidar_sim_server
     apps/LidarSimServer.cpp

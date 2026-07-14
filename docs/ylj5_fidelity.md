@@ -14,7 +14,7 @@
 - `cpp/protocol/src/WireFormat.cpp`：四物理通道 JSONL 序列化；
 - `cpp/client/src/LidarClientWorker.cpp`：Linux Qt 工作线程网络、拆帧和周期交付；
 - `cpp/client/src/FrameProcessor.cpp`：四通道预处理、反演和 PM 标定门控；
-- `cpp/tests/TestSimDeviceYlj5.cpp`：规格、协议、命令和全规格烟雾测试。
+- `cpp/tests/TestSimDeviceYlj5.cpp`：规格、协议、命令和可选全规格烟雾测试。
 - `cpp/tests/TestClientFrameProcessor.cpp`：客户端分子场回退、通道拼接和 PM 边界测试。
 
 ## 证据来源
@@ -78,12 +78,12 @@
 开销约 406 秒，再加 30 秒垂直观测，一个周期约 436 秒；完整执行一次 0/5 度队列约
 872 秒。逐周期只生成一个固定仰角层，不会把两圈数据同时堆进内存。
 
-核心数据结构为兼容通用 PPI 处理仍保留 `scan_mode=ppi/stare`。设备协议额外提供
+核心数据结构使用 `scan_mode=ppi/stare` 区分方位射线和垂直射线。设备协议额外提供
 `device_scan_pattern=horizontal_scan/vertical_observation/conical_scan`、
 `scheduled_elevation_deg`、`elevation_schedule_index` 和
 `elevation_schedule_length`，避免客户端靠角度猜测设备模式。
 
-每条 `lidar_raw` 帧包含兼容主通道 `raw_counts`，以及四条物理接收路径：
+每条 `lidar_raw` 帧包含近远场拼接主通道 `raw_counts`，以及四条物理接收路径：
 
 - `near_parallel_532nm`
 - `near_perpendicular_532nm`
@@ -108,11 +108,10 @@
 快速摘要不会被当成定量 PM。详细流程和标定 JSON 合同见
 [客户端实时处理链](algorithm_processing_chain.md)。
 
-设备按周期惰性生成，不再预生成并缓存 24 小时数据。默认规模若一次性缓存 180 个周期，
-仅四通道浮点数组就会占用数十 GB；当前内存峰值约为单个扫描周期。开发机双周期
-全规格烟雾测试共生成 362 条射线，其中 180 条水平、180 条锥形、2 条垂直；
-每条 5334 bins，耗时约 13.74 秒，最大常驻内存约 155.4 MiB。单周期仍只保留 181 条
-射线，轮换没有把峰值内存翻倍。这些数字只用于回归工程性能，不是厂家设备指标。
+设备按周期惰性生成，不再预生成并缓存 180 个周期。默认规模若一次性缓存整场四通道
+数据会占用数十 GB；当前运行时只保留一个 181 条射线周期。可选的 `--full-smoke` 测试
+固定验证两个周期共 362 条射线，其中 180 条水平、180 条锥形、2 条垂直，且每条都包含
+5334 bins 和四通道。耗时与内存应在具体实验记录中采集，不作为厂家设备指标。
 
 ## 明确的仿真假设
 

@@ -1,6 +1,6 @@
 /**
  * @file TcpServer.cpp
- * @brief 跨平台 TCP 服务器实现。
+ * @brief Linux POSIX TCP 服务器实现。
  */
 #include "lidar_server/TcpServer.hpp"
 
@@ -8,59 +8,26 @@
 #include <iostream>
 #include <stdexcept>
 
-#if defined(_WIN32)
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#pragma comment(lib, "ws2_32.lib")
-using SocketHandle = SOCKET;
-constexpr SocketHandle InvalidSocketValue = INVALID_SOCKET;
-#else
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 using SocketHandle = int;
 constexpr SocketHandle InvalidSocketValue = -1;
-#endif
 
 namespace lidar_server {
 
 namespace {
 
-/// 全局 Winsock 初始化计数（Windows only）
-#ifdef _WIN32
-struct WinsockInit {
-    WinsockInit() {
-        WSADATA wsa_data;
-        WSAStartup(MAKEWORD(2, 2), &wsa_data);
-    }
-    ~WinsockInit() {
-        WSACleanup();
-    }
-};
-WinsockInit g_winsock_init;
-#endif
-
 void close_socket(int sock) {
     if (sock < 0) return;
-#ifdef _WIN32
-    closesocket(static_cast<SocketHandle>(sock));
-#else
     ::close(sock);
-#endif
 }
 
 void shutdown_socket(int sock) {
     // 先 shutdown 再 close，确保另一线程中阻塞的 accept/recv 能被可靠唤醒。
     if (sock < 0) return;
-#ifdef _WIN32
-    ::shutdown(static_cast<SocketHandle>(sock), SD_BOTH);
-#else
     ::shutdown(sock, SHUT_RDWR);
-#endif
 }
 
 } // anonymous namespace
@@ -82,7 +49,7 @@ void TcpServer::start(const std::function<void(const std::string&)>& handler) {
 
     // 允许地址重用
     int opt = 1;
-    ::setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt), sizeof(opt));
+    ::setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     // 绑定
     struct sockaddr_in addr{};

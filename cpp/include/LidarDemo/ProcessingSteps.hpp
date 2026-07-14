@@ -1,6 +1,6 @@
 /**
  * @file ProcessingSteps.hpp
- * @brief Public single-profile processing step classes.
+ * @brief YLJ5 客户端使用的实时处理步骤接口。
  */
 #pragma once
 
@@ -11,21 +11,13 @@
 
 namespace lidar_demo {
 
-/**
- * @brief L0 -> L1 预处理步骤。
- *
- * 职责：背景扣除、激光能量归一、overlap 修正、range^2 修正、SNR 和 QC flag。
- */
+/** @brief 近远场拼接主通道的背景、能量、overlap、距离平方和 SNR 预处理。 */
 class BackgroundPreprocessStep {
 public:
     PreprocessResult process(const LidarProfile& profile) const;
 };
 
-/**
- * @brief Fernald/Klett 弹性 LiDAR 反演步骤。
- *
- * 职责：由 attenuated backscatter 估计消光和气溶胶后向散射。
- */
+/** @brief 使用远端参考和固定激光雷达比执行 Fernald/Klett 反演。 */
 class FernaldInversionStep {
 public:
     explicit FernaldInversionStep(RetrievalConfig config);
@@ -35,14 +27,10 @@ public:
         const std::vector<double>& attenuated_backscatter) const;
 
 private:
-    RetrievalConfig config_;
+    RetrievalConfig config_; ///< 当前弹性反演参数。
 };
 
-/**
- * @brief 湿度修正步骤。
- *
- * 职责：把湿消光换算到干参考状态，降低 RH 对 PM 估计的虚假放大。
- */
+/** @brief 把环境湿消光修正到干参考状态。 */
 class HumidityCorrectionStep {
 public:
     explicit HumidityCorrectionStep(HumidityConfig config);
@@ -52,48 +40,13 @@ public:
         double relative_humidity) const;
 
 private:
-    HumidityConfig config_;
+    HumidityConfig config_; ///< 当前吸湿增长修正参数。
 };
 
-/**
- * @brief 极坐标到 ENU 坐标投影步骤。
- */
+/** @brief 把距离、方位和仰角投影到本地 ENU 坐标。 */
 class CoordinateProjectionStep {
 public:
     std::vector<std::vector<double>> process(const LidarProfile& profile) const;
-};
-
-/**
- * @brief PPI/体扫热点检测步骤。
- *
- * 职责：按 timestamp 内的扫描射线构建距离-方位网格，执行阈值、相对异常和连通域分析。
- */
-class HotspotDetectionStep {
-public:
-    explicit HotspotDetectionStep(HotspotConfig config);
-
-    std::vector<Hotspot> process(const std::vector<ProcessedProfile>& ppi_profiles) const;
-
-private:
-    HotspotConfig config_;
-};
-
-/**
- * @brief 单条 profile 的类化处理链。
- *
- * 这个类把商用设备软件常见的 L0 -> L1 -> L2 几个阶段拆开，便于调试、面试讲解和后续替换算法。
- */
-class SingleProfileProcessingChain {
-public:
-    SingleProfileProcessingChain(RetrievalConfig retrieval, HumidityConfig humidity);
-
-    ProcessedProfile process(const LidarProfile& profile, bool disable_humidity = false) const;
-
-private:
-    BackgroundPreprocessStep preprocess_;
-    FernaldInversionStep inversion_;
-    HumidityCorrectionStep humidity_;
-    CoordinateProjectionStep projection_;
 };
 
 } // namespace lidar_demo

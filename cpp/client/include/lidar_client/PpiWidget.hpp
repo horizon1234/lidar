@@ -23,9 +23,6 @@ public:
     /** @brief 接收工作线程预计算的方位栅格和色标元数据。 */
     void set_snapshot(const DisplaySnapshot& snapshot);
 
-    /** @brief 设置视图标题。 */
-    void set_title(const QString& title);
-
     QSize minimumSizeHint() const override;
     QSize sizeHint() const override;
 

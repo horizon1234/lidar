@@ -19,41 +19,11 @@ namespace lidar_demo {
  * 描述一个 LiDAR 设备部署站点的地理与标识信息。
  */
 struct SiteInfo {
-    std::string name;            ///< 站点可读名称（如 "北京演示场"）
+    std::string name;            ///< YLJ5 部署站点可读名称。
     double latitude_deg = 0.0;   ///< 纬度（°，WGS84）
     double longitude_deg = 0.0;  ///< 经度（°，WGS84）
     double altitude_m = 0.0;     ///< 海拔高度（m）
-    std::string site_id;         ///< 站点唯一标识符（可与 Cloudnet 对齐）
-};
-
-/**
- * @brief Cloudnet 混合数据源配置
- *
- * 当使用真实 Cloudnet 云高仪 NetCDF 数据 + 合成 PPI 时所需的下载与裁剪参数。
- */
-struct CloudnetSourceConfig {
-    std::string site_id;            ///< Cloudnet 站点标识（如 "bucharest"）
-    std::string site_name;          ///< 站点可读名称
-    std::string date;               ///< 数据日期，格式 "YYYY-MM-DD"
-    bool verify_ssl = true;         ///< 下载时是否校验 SSL 证书
-    std::string local_file;         ///< 本地已存在的 .nc 文件路径（可空，则触发下载）
-    std::string download_url;       ///< .nc 文件的下载 URL
-    int time_steps = 18;            ///< 需要采样的时间步数量
-    int range_bin_count = 30;       ///< 每条扫描射线的目标距离分辨率
-    double min_range_m = 75.0;      ///< 保留的最小距离（m），滤除近端噪声
-    double max_range_m = 3200.0;    ///< 保留的最大距离（m），滤除远端噪声
-    double pseudo_signal_scale = 600000.0; ///< 由 beta 反推伪 raw_counts 时的缩放系数
-};
-
-/**
- * @brief 数据源配置
- *
- * 决定数据从仿真生成还是从真实文件加载，以及相关根目录。
- */
-struct SourceConfig {
-    std::string mode = "simulation";  ///< 数据源模式："simulation" 或 "cloudnet_hybrid"
-    std::string root = ".";           ///< 数据根目录（缓存、产物等的基准路径）
-    CloudnetSourceConfig cloudnet;    ///< cloudnet_hybrid 模式下的详细参数
+    std::string site_id;         ///< 站点唯一标识符。
 };
 
 /** @brief 一条由望远镜和偏振分光共同确定的物理接收路径。 */
@@ -72,15 +42,15 @@ struct LidarChannel {
 /**
  * @brief 单条 LiDAR 扫描射线（ray）的完整原始数据
  *
- * 对应 Python 端的 LidarProfile 数据类。包含一条射线的全部测量量（角度、
- * 距离轴、原始光子计数、系统参数、气象场、分子场）以及仅用于评估的真值场。
+ * 包含一条 YLJ5 射线的角度、距离轴、原始光子计数、四物理通道、气象场、
+ * 分子参考场以及仅用于仿真验证的真值场。
  */
 struct LidarProfile {
     std::string site_id;          ///< 所属站点标识
     std::string timestamp;        ///< 时间戳（ISO8601 分钟精度，如 "2026-05-30T08:00"）
     std::string scan_id;          ///< 扫描批次标识
     std::string scan_mode;        ///< 扫描模式："stare"（定点凝视）或 "ppi"（平面位置显示）
-    std::string source_kind;      ///< 数据来源类型（如 synthetic_stare / synthetic_ppi / cloudnet_real）
+    std::string source_kind;      ///< 数据来源类型，如 ylj5_synthetic_stare / ylj5_synthetic_ppi。
     double azimuth_deg = 0.0;     ///< 方位角（°，正北顺时针）
     double elevation_deg = 0.0;   ///< 仰角（°，水平为 0，天顶为 90）
     std::vector<double> ranges_m; ///< 各距离 bin 的距离（m）
@@ -100,7 +70,7 @@ struct LidarProfile {
     std::vector<double> true_pm25;         ///< PM2.5 浓度真值（µg/m³，用于评估）
     std::vector<double> true_pm10;         ///< PM10 浓度真值（µg/m³，用于评估）
     std::vector<int> true_hotspot_mask;    ///< 热点像元掩膜真值（0/1，用于评估）
-    // raw_counts 继续作为近远场拼接后的兼容主通道，现有反演链无需改入口。
+    // raw_counts 是近远场平行通道拼接后的反演主通道。
     std::vector<LidarChannel> channels; ///< 近/远场与平行/垂直偏振组成的物理通道列表。
     std::vector<double> depolarization_ratio; ///< 与距离轴对齐的体退偏比。
 };

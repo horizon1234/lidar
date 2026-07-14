@@ -5,6 +5,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 build/
+CMakeFiles/
 out/
 bin/
 
@@ -14,4 +15,3 @@ data/client_output/
 # coredump files (core-lidar_* or core.*)
 core-*
 core.*
-
