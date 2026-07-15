@@ -24,10 +24,67 @@
 #include <limits>
 #include <set>
 #include <stdexcept>
+#include <utility>
+
+#include "lidar_log/Logger.hpp"
 
 namespace lidar_client {
 
 namespace {
+
+constexpr std::size_t DebugArrayPreviewCount = 12;
+
+/**
+ * @brief 递归构造用于日志的 JSON 预览，不改变算法实际消费的 JSON。
+ *
+ * 回波帧中的 ranges_m、raw_counts、overlap 等数组可能包含数千个 bin。日志只保留每个
+ * 数组的前 12 项，并追加一个 JSON 对象说明省略了多少项；短数组和普通对象字段完整保留。
+ */
+lidar_core::Json make_debug_json_preview(const lidar_core::Json& value) {
+    if (value.is_array()) {
+        const auto& items = value.array_items();
+        lidar_core::Json::Array preview;
+        const std::size_t visible_count = std::min(
+            items.size(), DebugArrayPreviewCount);
+        preview.reserve(visible_count + (items.size() > visible_count ? 1 : 0));
+        for (std::size_t index = 0; index < visible_count; ++index) {
+            preview.push_back(make_debug_json_preview(items[index]));
+        }
+        if (items.size() > visible_count) {
+            preview.emplace_back(lidar_core::Json::Object{
+                {"_truncated", true},
+                {"omitted_count", static_cast<int>(items.size() - visible_count)},
+            });
+        }
+        return lidar_core::Json(std::move(preview));
+    }
+
+    if (value.is_object()) {
+        lidar_core::Json::Object preview;
+        for (const auto& [key, item] : value.object_items()) {
+            preview.emplace(key, make_debug_json_preview(item));
+        }
+        return lidar_core::Json(std::move(preview));
+    }
+
+    return value;
+}
+
+/** @brief 把协议 Frame 组合成带 type/timestamp 的缩进 JSON 日志文本。 */
+std::string make_debug_frame_json(const lidar_protocol::Frame& frame) {
+    lidar_core::Json::Object root{
+        {"type", lidar_protocol::frame_type_to_string(frame.type)},
+        {"timestamp", frame.timestamp},
+    };
+    if (frame.payload.is_object()) {
+        for (const auto& [key, value] : frame.payload.object_items()) {
+            root[key] = make_debug_json_preview(value);
+        }
+    } else {
+        root["payload"] = make_debug_json_preview(frame.payload);
+    }
+    return lidar_core::dump_json(lidar_core::Json(std::move(root)), 2);
+}
 
 /**
  * @brief 从 JSON 对象读取数值字段。
@@ -955,6 +1012,8 @@ lidar_core::ProcessedProfile FrameProcessor::process_device_profile(
 void FrameProcessor::handle_frame(const lidar_protocol::Frame& frame) {
     switch (frame.type) {
     case lidar_protocol::FrameType::lidar_raw: {
+        // 调试日志仅打印截断后的 JSON 预览；frame 本身保持原样继续进入协议映射和算法。
+        LIDAR_LOG_INFO("[client] lidar_raw frame preview:\n", make_debug_frame_json(frame));
         // 某些真实协议没有显式 heartbeat，时间戳变化也作为确定的周期边界。
         if (!current_timestamp_.empty() && frame.timestamp != current_timestamp_) {
             finalize_step();
