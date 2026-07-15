@@ -94,7 +94,7 @@ private:
     QByteArray receive_buffer_;             ///< 尚未形成完整 JSONL 行的接收缓存。
     FrameProcessor processor_;              ///< 四通道 L0-L2 处理器，仅在工作线程调用。
     DeviceStatusModel device_status_;       ///< 状态与遥测增量合并模型。
-    ScanCycleMonitor scan_monitor_;         ///< 扫描周期缺帧、乱序和重复帧监控器。
+    ScanCycleMonitor scan_monitor_;         ///< 扫描周期原始射线缺失和重复接收监控器。
     quint64 frames_received_ = 0;            ///< 成功解析协议帧数量。
     quint64 parse_errors_ = 0;               ///< JSON 或协议解析失败数量。
     quint64 bytes_received_ = 0;             ///< socket 累计接收字节数。
