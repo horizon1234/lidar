@@ -11,6 +11,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
+# Shared logging used by every runtime module.  It is added first so its
+# public target can be propagated transitively through lidar_core.
+add_subdirectory(cpp/Log)
+
 # YLJ5 服务端、协议和客户端共享的 JSON、四通道正演及实时处理算法。
 add_library(lidar_core STATIC
     cpp/src/JsonEngine.cpp
@@ -21,6 +25,8 @@ target_include_directories(lidar_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/core/include
 )
+
+target_link_libraries(lidar_core PUBLIC lidar_log)
 
 add_subdirectory(cpp/protocol)
 add_subdirectory(cpp/server)
@@ -52,3 +58,7 @@ add_test(NAME lidar_client_sim_device_pipeline_test COMMAND lidar_client_sim_dev
 add_executable(lidar_sim_device_ylj5_test cpp/tests/TestSimDeviceYlj5.cpp)
 target_link_libraries(lidar_sim_device_ylj5_test PRIVATE lidar_server)
 add_test(NAME lidar_sim_device_ylj5_test COMMAND lidar_sim_device_ylj5_test)
+
+add_executable(lidar_log_test cpp/tests/TestLog.cpp)
+target_link_libraries(lidar_log_test PRIVATE lidar_log)
+add_test(NAME lidar_log_test COMMAND lidar_log_test)

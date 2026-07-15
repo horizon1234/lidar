@@ -13,6 +13,8 @@
 #include <filesystem>
 #include <stdexcept>
 
+#include "lidar_log/Logger.hpp"
+
 namespace lidar_client {
 
 namespace {
@@ -137,6 +139,8 @@ void LidarClientWorker::ensure_socket() {
     socket_ = new QTcpSocket(this);
     connect(socket_, &QTcpSocket::readyRead, this, &LidarClientWorker::handle_ready_read);
     connect(socket_, &QTcpSocket::connected, this, [this]() {
+        LIDAR_LOG_INFO("[client] connected to ", socket_->peerName().toStdString(), ":",
+                       socket_->peerPort());
         emit connection_changed(
             true,
             QStringLiteral("已连接 %1:%2")
@@ -145,11 +149,13 @@ void LidarClientWorker::ensure_socket() {
         send_command(QStringLiteral("get_status"));
     });
     connect(socket_, &QTcpSocket::disconnected, this, [this]() {
+        LIDAR_LOG_INFO("[client] disconnected from device");
         if (!shutting_down_) {
             emit connection_changed(false, QStringLiteral("连接已断开"));
         }
     });
     connect(socket_, &QTcpSocket::errorOccurred, this, [this](QAbstractSocket::SocketError) {
+        LIDAR_LOG_ERROR("[client] socket error: ", socket_->errorString().toStdString());
         handle_socket_error();
     });
 }
@@ -248,15 +254,21 @@ void LidarClientWorker::handle_ready_read() {
         return;
     }
     const QByteArray chunk = socket_->readAll();
+    LIDAR_LOG_INFO("收到激光雷达数据，本次接收 ", chunk.size(), " 字节");
     bytes_received_ += static_cast<quint64>(chunk.size());
     receive_buffer_.append(chunk);
     if (receive_buffer_.size() > MaximumBufferedBytes) {
+        LIDAR_LOG_WARN("接收缓存过大，当前缓存为 ", receive_buffer_.size(),
+                       " 字节，已丢弃未封口数据");
         receive_buffer_.clear();
         ++parse_errors_;
         emit worker_error(QStringLiteral("接收缓存超过 64 MiB，已丢弃未封口数据"));
         return;
     }
 
+    if (receive_buffer_.contains('\n')) {
+        LIDAR_LOG_INFO("开始解析激光雷达数据");
+    }
     qsizetype newline = -1;
     while ((newline = receive_buffer_.indexOf('\n')) >= 0) {
         QByteArray line = receive_buffer_.left(newline).trimmed();
@@ -306,6 +318,7 @@ void LidarClientWorker::process_line(const QByteArray& line) {
         processor_.handle_frame(frame);
     } catch (const std::exception& error) {
         ++parse_errors_;
+        LIDAR_LOG_WARN("[client] protocol frame parse failed: ", error.what());
         emit worker_error(QStringLiteral("协议帧解析失败：%1").arg(QString::fromUtf8(error.what())));
     }
 }

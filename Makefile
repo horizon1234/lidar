@@ -5,7 +5,7 @@ BIN_DIR := bin
 JOBS ?= $(shell nproc 2>/dev/null || echo 4)
 CMAKE_BUILD := cmake --build $(BUILD_DIR) -j$(JOBS)
 
-.PHONY: config all server client protocol core examples tests test run-server run-client clean pristine list
+.PHONY: config all server client protocol core log examples tests test run-server run-client clean pristine list
 
 config:
 	cmake -S . -B $(BUILD_DIR)
@@ -26,6 +26,9 @@ protocol: config
 
 core: config
 	$(CMAKE_BUILD) --target lidar_core
+
+log: config
+	$(CMAKE_BUILD) --target lidar_log
 
 examples: config
 	$(CMAKE_BUILD) --target lidar_example_1d_ray lidar_example_2d_ppi lidar_example_3d_rhi

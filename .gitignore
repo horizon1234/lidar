@@ -8,6 +8,7 @@ build/
 CMakeFiles/
 out/
 bin/
+logs/
 
 # 客户端运行时输出（每步处理结果、final_report 等）
 data/client_output/

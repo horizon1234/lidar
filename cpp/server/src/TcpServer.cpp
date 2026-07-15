@@ -5,13 +5,14 @@
 #include "lidar_server/TcpServer.hpp"
 
 #include <cstring>
-#include <iostream>
 #include <stdexcept>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#include "lidar_log/Logger.hpp"
 using SocketHandle = int;
 constexpr SocketHandle InvalidSocketValue = -1;
 
@@ -70,20 +71,20 @@ void TcpServer::start(const std::function<void(const std::string&)>& handler) {
     listen_socket_.store(static_cast<int>(listen_fd));
     running_.store(true);
 
-    std::cerr << "[tcp_server] Listening on port " << port_ << " ...\n";
+    LIDAR_LOG_INFO("[tcp_server] Listening on port ", port_, " ...");
 
     while (running_) {
         // 接受连接
         SocketHandle client_fd = ::accept(listen_fd, nullptr, nullptr);
         if (client_fd == InvalidSocketValue) {
             if (running_) {
-                std::cerr << "[tcp_server] accept() failed\n";
+                LIDAR_LOG_ERROR("[tcp_server] accept() failed");
             }
             break;
         }
 
         client_socket_ = static_cast<int>(client_fd);
-        std::cerr << "[tcp_server] Client connected.\n";
+        LIDAR_LOG_INFO("[tcp_server] Client connected.");
 
         // 逐行读取
         std::string buffer;
@@ -110,7 +111,7 @@ void TcpServer::start(const std::function<void(const std::string&)>& handler) {
         if (int fd = client_socket_.exchange(-1); fd >= 0) {
             close_socket(fd);
         }
-        std::cerr << "[tcp_server] Client disconnected.\n";
+        LIDAR_LOG_INFO("[tcp_server] Client disconnected.");
     }
 
     if (int fd = listen_socket_.exchange(-1); fd >= 0) {

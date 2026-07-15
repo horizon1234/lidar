@@ -38,11 +38,11 @@
 #include <cmath>
 #include <csignal>
 #include <cstdint>
-#include <iostream>
 #include <string>
 #include <thread>
 
 #include "lidar_protocol/Frame.hpp"
+#include "lidar_log/Logger.hpp"
 #include "lidar_server/DevicePlaybackTiming.hpp"
 #include "lidar_server/SimDevice.hpp"
 #include "lidar_server/TcpServer.hpp"
@@ -72,6 +72,13 @@ void signal_handler(int) {
  * @return 0 正常退出；1 启动失败（端口占用/配置校验失败）。
  */
 int main(int argc, char* argv[]) {
+    lidar_log::Logger::initialize({
+        .file_path = "logs/lidar_sim_server.log",
+        .minimum_level = lidar_log::Level::info,
+        .console = true,
+        .file = true,
+    });
+
     // ---- 解析命令行参数 ----
     std::uint16_t port = 19850;          // 默认监听端口（YLJ5 约定端口）
     int cycle_delay_ms = 0;              // 周期间额外延迟，默认 0 表示无额外等待
@@ -95,7 +102,7 @@ int main(int argc, char* argv[]) {
     // 构造时只执行公开规格校验；若配置非法 total_steps 为 0。
     lidar_server::SimDevice device(device_config);
     if (device.total_steps() == 0) {
-        std::cerr << "[server] YLJ5 emulator configuration failed validation.\n";
+        LIDAR_LOG_ERROR("[server] YLJ5 emulator configuration failed validation.");
         return 1;
     }
 
@@ -142,15 +149,12 @@ int main(int argc, char* argv[]) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     if (startup_failed || !server.is_listening()) {
-        std::cerr << "[server] Startup failed on port " << port;
-        if (!startup_error.empty()) {
-            std::cerr << ": " << startup_error;
-        }
-        std::cerr << "\n";
+        LIDAR_LOG_ERROR("[server] Startup failed on port ", port,
+                        startup_error.empty() ? "" : ": ", startup_error);
         should_stop = true;
     } else {
-        std::cerr << "[server] YLJ5 / AGHJ-I-LIDAR(MPL) emulator listening on port "
-                  << port << ", site=" << device.site_info().site_id << "\n";
+        LIDAR_LOG_INFO("[server] YLJ5 / AGHJ-I-LIDAR(MPL) emulator listening on port ",
+                       port, ", site=", device.site_info().site_id);
     }
 
     // ==================== 主推流循环 ====================

@@ -7,9 +7,17 @@
 #include <QCommandLineParser>
 #include <QTimer>
 
+#include "lidar_log/Logger.hpp"
 #include "lidar_client/MainWindow.hpp"
 
 int main(int argc, char* argv[]) {
+    lidar_log::Logger::initialize({
+        .file_path = "logs/lidar_gui.log",
+        .minimum_level = lidar_log::Level::info,
+        .console = true,
+        .file = true,
+    });
+
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("YLJ5 LiDAR Monitor"));
     app.setApplicationVersion(QStringLiteral("1.0"));
