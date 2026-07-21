@@ -10,7 +10,7 @@ FernaldInversionStep::FernaldInversionStep(RetrievalConfig config)
     : config_(std::move(config)) {
 }
 
-std::pair<std::vector<double>, std::vector<double>> FernaldInversionStep::process(
+OpticalRetrievalResult FernaldInversionStep::process(
     const LidarProfile& profile,
     const std::vector<double>& attenuated_backscatter,
     const std::vector<BinQualityMask>& bin_quality) const {
@@ -27,11 +27,11 @@ HumidityCorrectionStep::HumidityCorrectionStep(HumidityConfig config)
 }
 
 std::vector<double> HumidityCorrectionStep::process(
-    const std::vector<double>& extinction,
+    const std::vector<double>& aerosol_extinction,
     double relative_humidity) const {
     // 湿度对整条射线使用同一环境值；若未来有距离分辨湿度场，应扩展接口而非在此插值猜测。
     return apply_humidity_correction(
-        extinction,
+        aerosol_extinction,
         relative_humidity,
         config_.dry_reference_rh,
         config_.hygroscopicity);

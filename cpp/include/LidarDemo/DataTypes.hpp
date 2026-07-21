@@ -126,8 +126,8 @@ struct LidarProfile {
     std::vector<double> molecular_backscatter;  ///< 分子（Rayleigh）后向散射系数（km^-1 sr^-1）
     std::vector<double> molecular_extinction;   ///< 分子（Rayleigh）消光系数（km^-1）
     // ---- 以下真值字段仅在仿真/评估中使用，真实数据不存在 ----
-    std::vector<double> true_backscatter;  ///< 气溶胶后向散射真值（用于评估）
-    std::vector<double> true_extinction;   ///< 气溶胶消光真值（用于评估）
+    std::vector<double> true_backscatter;  ///< 分子+气溶胶总后向散射真值（用于评估）
+    std::vector<double> true_extinction;   ///< 分子+气溶胶总消光真值（用于评估）
     std::vector<double> true_pm25;         ///< PM2.5 浓度真值（µg/m³，用于评估）
     std::vector<double> true_pm10;         ///< PM10 浓度真值（µg/m³，用于评估）
     std::vector<int> true_hotspot_mask;    ///< 热点像元掩膜真值（0/1，用于评估）
@@ -174,6 +174,13 @@ struct PreprocessResult {
     std::vector<std::string> qc_flags;          ///< 质控标志
 };
 
+/** @brief Fernald/Klett 光学反演输出，所有数组均与输入距离轴对齐。 */
+struct OpticalRetrievalResult {
+    std::vector<double> total_extinction;      ///< 分子+气溶胶总消光（环境湿态，km^-1）。
+    std::vector<double> aerosol_backscatter;   ///< 气溶胶后向散射（km^-1 sr^-1）。
+    std::vector<double> aerosol_extinction;    ///< 气溶胶消光（环境湿态，km^-1）。
+};
+
 /**
  * @brief 一条 LiDAR 射线经过全流程处理后的结果
  *
@@ -185,8 +192,10 @@ struct ProcessedProfile {
     std::vector<double> l1_signal;    ///< L1 级信号（背景扣除+能量归一化+重叠校正后）
     std::vector<double> attenuated_backscatter; ///< 衰减后向散射（距离平方校正后）
     std::vector<double> snr;          ///< 各 bin 的信噪比（SNR）
-    std::vector<double> extinction;   ///< 反演得到的（含湿）消光系数（km^-1）
-    std::vector<double> dry_extinction; ///< 干状态消光系数（湿度校正后，km^-1）
+    std::vector<double> extinction;   ///< 反演得到的分子+气溶胶总消光（环境湿态，km^-1）
+    std::vector<double> aerosol_backscatter; ///< 反演得到的气溶胶后向散射（km^-1 sr^-1）
+    std::vector<double> aerosol_extinction; ///< 反演得到的气溶胶消光（环境湿态，km^-1）
+    std::vector<double> dry_extinction; ///< 湿度修正后的干态气溶胶消光（km^-1）
     std::vector<double> pm25;         ///< 估算的 PM2.5 浓度（µg/m³）
     std::vector<double> pm10;         ///< 估算的 PM10 浓度（µg/m³）
     std::vector<std::vector<double>> enu_points_m; ///< 各 bin 在 ENU 坐标系下的 [东,北,上]（m）

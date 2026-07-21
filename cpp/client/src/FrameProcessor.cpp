@@ -923,23 +923,24 @@ lidar_core::ProcessedProfile FrameProcessor::process_device_profile(
     auto optical = inversion.process(
         profile, preprocessed.attenuated_backscatter, preprocessed.bin_quality);
     int retrieval_unavailable_bins = 0;
-    for (std::size_t index = 0; index < optical.first.size(); ++index) {
-        if (!std::isfinite(optical.first[index])) {
+    for (std::size_t index = 0; index < optical.total_extinction.size(); ++index) {
+        if (!std::isfinite(optical.total_extinction[index])) {
             // 预处理可用但未落入最终连续反演区的 bin，也要追加 retrieval_unavailable 原因。
             preprocessed.bin_quality[index] |= lidar_core::quality_mask(
                 lidar_core::BinQualityFlag::retrieval_unavailable);
             ++retrieval_unavailable_bins;
         }
     }
-    if (retrieval_unavailable_bins == static_cast<int>(optical.first.size())) {
+    if (retrieval_unavailable_bins == static_cast<int>(optical.total_extinction.size())) {
         // 整条射线仍保留用于故障分析，但不能生成任何 L2 定量产品。
         qc_flags.emplace_back("retrieval-insufficient-contiguous-valid-range");
     } else if (retrieval_unavailable_bins > 0) {
         qc_flags.emplace_back("retrieval-invalid-bins-masked");
     }
-    // 湿度增长会抬高环境消光；除以增长因子得到与干态 PM 标定一致的消光。
+    // 吸湿增长只作用于气溶胶；分子消光保持不变，不能随气溶胶增长因子一起缩放。
     lidar_core::HumidityCorrectionStep humidity(config_.humidity);
-    std::vector<double> dry_extinction = humidity.process(optical.first, profile.relative_humidity);
+    std::vector<double> dry_extinction = humidity.process(
+        optical.aerosol_extinction, profile.relative_humidity);
 
     // ---- 6. PM 标定门控 -----------------------------------------------------------
     // 未具备完整组合标定时保持空数组；具备标定但单 bin 无效时保留等长数组并写 NaN。
@@ -991,7 +992,9 @@ lidar_core::ProcessedProfile FrameProcessor::process_device_profile(
         std::move(preprocessed.l1_signal),
         std::move(preprocessed.attenuated_backscatter),
         std::move(preprocessed.snr),
-        std::move(optical.first),
+        std::move(optical.total_extinction),
+        std::move(optical.aerosol_backscatter),
+        std::move(optical.aerosol_extinction),
         std::move(dry_extinction),
         std::move(pm25),
         std::move(pm10),

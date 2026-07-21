@@ -269,15 +269,16 @@ snr = signal * sqrt(integrated_pulses) / sqrt(raw + background)
 ## 5. Fernald/Klett 弹性反演
 
 `FernaldInversionStep` 在最长连续有效距离区间内选择远端参考窗，并按实际距离门间距从
-远端向近端反向积分，输出消光和气溶胶后向散射。无效区保持 `NaN`，不会被零值伪装成
-晴空。该方法建立在经典 Klett/Fernald 弹性后向散射反演上：
+远端向近端反向积分，分别输出总消光、气溶胶消光和气溶胶后向散射。无效区保持 `NaN`，
+不会被零值伪装成晴空。该方法建立在经典 Klett/Fernald 弹性后向散射反演上：
 
 ```text
 attenuated_backscatter + molecular profile
   -> 远端参考尺度
   -> 双程透过率反向积分
-  -> aerosol backscatter
-  -> extinction = molecular extinction + lidar_ratio * aerosol backscatter
+  -> aerosol_backscatter
+  -> aerosol_extinction = lidar_ratio * aerosol_backscatter
+  -> total_extinction = molecular_extinction + aerosol_extinction
 ```
 
 单波长弹性回波无法独立确定激光雷达比，结果必须结合参考区、天气掩膜和敏感性分析。
@@ -285,10 +286,11 @@ attenuated_backscatter + molecular profile
 
 ## 6. 湿度修正和坐标投影
 
-`HumidityCorrectionStep` 用简化的 κ-Kohler 风格增长因子把环境湿消光修正到干参考状态：
+`HumidityCorrectionStep` 用简化的 κ-Kohler 风格增长因子把环境湿态气溶胶消光修正到干
+参考状态。分子消光不参与气溶胶吸湿修正：
 
 ```text
-dry_extinction = extinction / g(relative_humidity)
+dry_extinction = aerosol_extinction / g(relative_humidity)
 ```
 
 `CoordinateProjectionStep` 再把距离、方位和仰角转换为本地 ENU：
@@ -312,6 +314,8 @@ Up    = r * sin(elevation)
 PM2.5 = max(0, intercept25 + slope25 * dry_extinction)
 PM10  = max(0, intercept10 + slope10 * dry_extinction)
 ```
+
+其中 `dry_extinction` 明确表示干态气溶胶消光，不包含分子 Rayleigh 消光。
 
 PM 模型字段和 `receiver_calibration` 必须位于同一个组合标定文件，完整结构见
 `configs/ylj5_calibration.template.json`。接收机部分包含设备序列号对应的探测模式、距离

@@ -27,7 +27,7 @@ struct DisplaySnapshot {
     int ppi_valid_bin_count = 0;                  ///< 实际参与绘制的有效距离门数量。
     int ppi_masked_bin_count = 0;                 ///< 被质量控制排除的距离门数量。
     std::vector<double> vertical_heights_m;       ///< 最近垂直廓线的相对高度（米）。
-    std::vector<double> vertical_dry_extinction;  ///< 最近垂直廓线的干消光。
+    std::vector<double> vertical_dry_extinction;  ///< 最近垂直廓线的干态气溶胶消光。
     std::vector<double> vertical_depolarization;  ///< 最近垂直廓线的体退偏比。
 };
 

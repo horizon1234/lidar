@@ -29,7 +29,7 @@ protected:
 
 private:
     std::vector<double> heights_m_;       ///< 相对设备的观测高度（米）。
-    std::vector<double> dry_extinction_;  ///< 干消光廓线（每千米）。
+    std::vector<double> dry_extinction_;  ///< 干态气溶胶消光廓线（每千米）。
     std::vector<double> depolarization_;  ///< 体退偏比廓线。
 };
 

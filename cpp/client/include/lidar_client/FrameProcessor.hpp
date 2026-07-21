@@ -16,7 +16,8 @@ namespace lidar_client {
 /**
  * @brief 站点 PM 标定系数；只有它和接收机标定均 valid 时才允许输出定量 PM。
  *
- * 线性关系为 PM = max(0, intercept + slope * dry_extinction)，其中干消光单位 km^-1。
+ * 线性关系为 PM = max(0, intercept + slope * dry_extinction)，其中 dry_extinction
+ * 是干态气溶胶消光，单位 km^-1。
  * 系数必须来自目标站点与参考颗粒物仪器共址数据，不能跨站点直接复用。
  */
 struct PmCalibrationModel {
@@ -24,9 +25,9 @@ struct PmCalibrationModel {
     std::string calibration_id;            ///< 标定文件或标定批次的唯一标识。
     std::string valid_from;                ///< 标定生效时间，用于结果追溯。
     double pm25_intercept_ugm3 = 0.0;      ///< PM2.5 线性模型截距（微克/立方米）。
-    double pm25_slope_ugm3_per_km = 0.0;  ///< 干消光到 PM2.5 的斜率。
+    double pm25_slope_ugm3_per_km = 0.0;  ///< 干态气溶胶消光到 PM2.5 的斜率。
     double pm10_intercept_ugm3 = 0.0;      ///< PM10 线性模型截距（微克/立方米）。
-    double pm10_slope_ugm3_per_km = 0.0;  ///< 干消光到 PM10 的斜率。
+    double pm10_slope_ugm3_per_km = 0.0;  ///< 干态气溶胶消光到 PM10 的斜率。
 };
 
 /**

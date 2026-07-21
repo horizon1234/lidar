@@ -28,6 +28,12 @@ bool contains_flag(const std::vector<std::string>& flags, const std::string& exp
     return std::find(flags.begin(), flags.end(), expected) != flags.end();
 }
 
+/** @brief 用相对+绝对容差比较反演浮点量。 */
+bool nearly_equal(double left, double right) {
+    const double scale = std::max({1.0, std::abs(left), std::abs(right)});
+    return std::abs(left - right) <= 1e-10 * scale;
+}
+
 /** @brief 构造近/远场、平行/垂直偏振四条物理接收路径。 */
 lidar_core::LidarChannel make_channel(
     const std::string& id,
@@ -163,6 +169,37 @@ int main() {
                 "PM arrays must remain empty before a site calibration is loaded");
         require(optical_only.processed_profiles.front().bin_quality.size() == 64,
                 "Every processed profile should expose range-aligned bin quality");
+        const auto& optical_profile = optical_only.processed_profiles.front();
+        require(optical_profile.extinction.size() == 64
+                    && optical_profile.aerosol_backscatter.size() == 64
+                    && optical_profile.aerosol_extinction.size() == 64
+                    && optical_profile.dry_extinction.size() == 64,
+                "Total, aerosol and dry optical products must remain range-aligned");
+        const auto expected_dry_extinction = lidar_core::HumidityCorrectionStep(
+            lidar_core::HumidityConfig{}).process(
+                optical_profile.aerosol_extinction,
+                optical_profile.profile.relative_humidity);
+        bool checked_finite_optical_bin = false;
+        for (std::size_t index = 0; index < optical_profile.extinction.size(); ++index) {
+            if (!std::isfinite(optical_profile.extinction[index])) continue;
+            require(std::isfinite(optical_profile.profile.molecular_extinction[index])
+                        && std::isfinite(optical_profile.aerosol_backscatter[index])
+                        && std::isfinite(optical_profile.aerosol_extinction[index])
+                        && std::isfinite(optical_profile.dry_extinction[index]),
+                    "Every retrieved optical component must be finite in a valid bin");
+            require(nearly_equal(
+                        optical_profile.extinction[index],
+                        optical_profile.profile.molecular_extinction[index]
+                            + optical_profile.aerosol_extinction[index]),
+                    "Total extinction must equal molecular plus aerosol extinction");
+            require(nearly_equal(
+                        optical_profile.dry_extinction[index],
+                        expected_dry_extinction[index]),
+                    "Humidity correction must use aerosol extinction only");
+            checked_finite_optical_bin = true;
+        }
+        require(checked_finite_optical_bin,
+                "Optical component assertions require at least one valid retrieval bin");
         require(lidar_core::has_quality(
                     optical_only.processed_profiles.front().bin_quality.front(),
                     lidar_core::BinQualityFlag::partial_overlap),

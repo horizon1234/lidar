@@ -94,7 +94,7 @@ void VerticalProfileWidget::paintEvent(QPaintEvent*) {
     painter.drawText(QRectF(8, plot.top(), 58, 20), Qt::AlignRight, QString::number(max_height / 1000.0, 'f', 1) + " km");
     painter.drawText(QRectF(8, plot.bottom() - 18, 58, 20), Qt::AlignRight, QStringLiteral("0 km"));
     painter.drawText(QRectF(plot.left(), plot.bottom() + 8, plot.width(), 20), Qt::AlignLeft,
-                     QStringLiteral("干消光  |  -- 退偏比"));
+                     QStringLiteral("干气溶胶消光  |  -- 退偏比"));
 }
 
 } // namespace lidar_client

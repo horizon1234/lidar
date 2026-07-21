@@ -64,6 +64,11 @@ int main() {
                     profile.dry_extinction.begin(), profile.dry_extinction.end(),
                     [](double value) { return std::isfinite(value); }),
                 "A valid contiguous range should survive through optical inversion");
+        require(profile.extinction.size() == 5334
+                    && profile.aerosol_backscatter.size() == 5334
+                    && profile.aerosol_extinction.size() == 5334
+                    && profile.dry_extinction.size() == 5334,
+                "Production optical components should remain aligned to every range bin");
         require(profile.pm25.empty() && profile.pm10.empty() && !completed->pm_calibrated,
                 "Public-spec assumptions must not silently produce quantitative PM");
 

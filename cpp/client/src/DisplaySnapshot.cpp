@@ -119,10 +119,10 @@ DisplaySnapshot build_display_snapshot(const StepResult& result, double ppi_max_
     const bool display_pm = result.pm_calibrated;
     snapshot.ppi_title = display_pm
         ? QStringLiteral("方位扫描 - 已标定 PM2.5")
-        : QStringLiteral("方位扫描 - 干消光（PM 未标定）");
+        : QStringLiteral("方位扫描 - 干气溶胶消光（PM 未标定）");
     snapshot.ppi_field_label = display_pm
         ? QStringLiteral("PM2.5 (µg/m³)")
-        : QStringLiteral("干消光 (km⁻¹)");
+        : QStringLiteral("干气溶胶消光 (km⁻¹)");
 
     std::vector<double> finite_values;
     for (const auto& profile : result.processed_profiles) {

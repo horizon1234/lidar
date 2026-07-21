@@ -32,7 +32,7 @@ protected:
 private:
     QImage canvas_;                            ///< 当前周期预渲染的极坐标图像。
     QString title_ = QStringLiteral("方位扫描"); ///< 当前图层标题。
-    QString field_label_ = QStringLiteral("干消光"); ///< 当前显示物理量名称。
+    QString field_label_ = QStringLiteral("干气溶胶消光"); ///< 当前显示物理量名称。
     std::vector<lidar_core::Hotspot> hotspots_; ///< 当前已标定热点叠加层。
     double max_range_m_ = 5000.0;             ///< 当前显示半径（米）。
     double color_max_ = 0.0;                  ///< 当前色标 98% 分位上限。

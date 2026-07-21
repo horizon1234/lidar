@@ -78,14 +78,13 @@ PreprocessResult preprocess_profile(const LidarProfile& profile) {
 /**
  * @brief 在最长连续有效区间上执行简化的 Fernald/Klett 弹性反演。
  *
- * @return pair.first 为总消光 alpha_total（km^-1），pair.second 为气溶胶后向散射
- * beta_aerosol（km^-1 sr^-1）。无效或未参与反演的位置为 NaN。
+ * @return 总消光、气溶胶后向散射和气溶胶消光。无效或未参与反演的位置为 NaN。
  *
  * 单波长弹性雷达只有一个观测方程，无法同时独立求解消光和后向散射，因此必须假设
  * 气溶胶激光雷达比 S_a=alpha_a/beta_a，并在远端参考区给定气溶胶后向散射边界。
  * 本实现采用由远向近的稳定积分方向；它是工程近似，不等于厂商私有反演算法。
  */
-std::pair<std::vector<double>, std::vector<double>> run_fernald_inversion(
+OpticalRetrievalResult run_fernald_inversion(
     const LidarProfile& profile,
     const std::vector<double>& attenuated_backscatter,
     const std::vector<BinQualityMask>& bin_quality,
@@ -134,13 +133,18 @@ std::pair<std::vector<double>, std::vector<double>> run_fernald_inversion(
 
     // 先把整条输出初始化为 NaN，只覆盖真正参与反演的连续区间。
     const double invalid = std::numeric_limits<double>::quiet_NaN();
-    std::vector<double> extinction(attenuated_backscatter.size(), invalid);
+    std::vector<double> total_extinction(attenuated_backscatter.size(), invalid);
     std::vector<double> aerosol_backscatter(attenuated_backscatter.size(), invalid);
+    std::vector<double> aerosol_extinction(attenuated_backscatter.size(), invalid);
     const std::size_t minimum_valid_bins = static_cast<std::size_t>(
         std::max(config.minimum_valid_bins, 5));
     if (best_end - best_begin < minimum_valid_bins) {
         // 连续有效段太短时没有稳定参考窗，返回全 NaN，由调用方追加 retrieval QC。
-        return {std::move(extinction), std::move(aerosol_backscatter)};
+        return {
+            std::move(total_extinction),
+            std::move(aerosol_backscatter),
+            std::move(aerosol_extinction),
+        };
     }
 
     // 参考窗取有效段最远端的若干 bin，至少 5 个，以平均随机噪声和局部细结构。
@@ -182,22 +186,28 @@ std::pair<std::vector<double>, std::vector<double>> run_fernald_inversion(
         const double molecular_extinction =
             profile.molecular_extinction[static_cast<std::size_t>(index)];
         // alpha_total = alpha_m + S_a * beta_a，并用工程上限抑制反向积分爆炸。
-        const double total_extinction = std::clamp(
+        const double total_extinction_value = std::clamp(
             molecular_extinction + config.aerosol_lidar_ratio_sr * aerosol,
             molecular_extinction,
             config.maximum_extinction_per_km);
         aerosol_backscatter[static_cast<std::size_t>(index)] = aerosol;
-        extinction[static_cast<std::size_t>(index)] = total_extinction;
+        aerosol_extinction[static_cast<std::size_t>(index)] =
+            total_extinction_value - molecular_extinction;
+        total_extinction[static_cast<std::size_t>(index)] = total_extinction_value;
         if (index > static_cast<int>(best_begin)) {
             // 使用实际相邻距离差而非固定 bin 宽，兼容重采样或非均匀距离轴。
             const double step_km = (
                 profile.ranges_m[static_cast<std::size_t>(index)]
                 - profile.ranges_m[static_cast<std::size_t>(index - 1)]) / 1000.0;
             // 无量纲光学厚度增量 d_tau = alpha(km^-1) * dr(km)。
-            optical_depth += total_extinction * step_km;
+            optical_depth += total_extinction_value * step_km;
         }
     }
-    return {std::move(extinction), std::move(aerosol_backscatter)};
+    return {
+        std::move(total_extinction),
+        std::move(aerosol_backscatter),
+        std::move(aerosol_extinction),
+    };
 }
 
 /**
@@ -222,21 +232,22 @@ double humidity_growth_factor(
 }
 
 /**
- * @brief 把环境湿态消光换算到 PM 标定使用的干参考状态。
+ * @brief 把环境湿态气溶胶消光换算到 PM 标定使用的干参考状态。
  *
- * dry_extinction = ambient_extinction / g(RH)。NaN 输入通过 IEEE 浮点除法自然保持 NaN，
+ * dry_extinction = aerosol_extinction / g(RH)。分子消光不受气溶胶吸湿增长因子修正。
+ * NaN 输入通过 IEEE 浮点除法自然保持 NaN，
  * 因而逐 bin 无效区不会在湿度校正阶段重新变成有限数值。
  */
 std::vector<double> apply_humidity_correction(
-    const std::vector<double>& extinction,
+    const std::vector<double>& aerosol_extinction,
     double relative_humidity,
     double dry_reference_rh,
     double hygroscopicity) {
     const double factor = humidity_growth_factor(
         relative_humidity, dry_reference_rh, hygroscopicity);
     std::vector<double> output;
-    output.reserve(extinction.size());
-    for (double value : extinction) output.push_back(value / factor);
+    output.reserve(aerosol_extinction.size());
+    for (double value : aerosol_extinction) output.push_back(value / factor);
     return output;
 }
 

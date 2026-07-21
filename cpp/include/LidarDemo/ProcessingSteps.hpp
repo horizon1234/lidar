@@ -22,7 +22,7 @@ class FernaldInversionStep {
 public:
     explicit FernaldInversionStep(RetrievalConfig config);
 
-    std::pair<std::vector<double>, std::vector<double>> process(
+    OpticalRetrievalResult process(
         const LidarProfile& profile,
         const std::vector<double>& attenuated_backscatter,
         const std::vector<BinQualityMask>& bin_quality = {}) const;
@@ -31,13 +31,13 @@ private:
     RetrievalConfig config_; ///< 当前弹性反演参数。
 };
 
-/** @brief 把环境湿消光修正到干参考状态。 */
+/** @brief 把环境湿态气溶胶消光修正到干参考状态。 */
 class HumidityCorrectionStep {
 public:
     explicit HumidityCorrectionStep(HumidityConfig config);
 
     std::vector<double> process(
-        const std::vector<double>& extinction,
+        const std::vector<double>& aerosol_extinction,
         double relative_humidity) const;
 
 private:
